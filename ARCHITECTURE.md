@@ -46,9 +46,9 @@ yebomradio/
 |---|---|---|---|---|
 | 1 | KBS 클래식 FM | HLS 라이브 | KBS API → Workers 프록시 | `#C4B5FD` 라벤더 |
 | 2 | 극동방송 | HLS 라이브 | 고정 m3u8 + 편성표 프록시 | `#FBBF9A` 살구 |
-| 3 | 말씀전당 | R2 개인선택 | `radio/channel-list1/` | `#86EFAC` 민트 |
+| 3 | 말씀의 전당 | R2 개인선택 | `radio/channel-list1/` | `#86EFAC` 민트 |
 | 4 | 찬양의 숲 | R2 개인선택 | `radio/channel-list2/` | `#FCD34D` 골드 |
-| 5 | 예봄소리 | R2 공유스트리밍 | `radio/channel-stream/` + KV 동기화 | `#F59E0B` 앰버 |
+| 5 | 봄소리 방송 | R2 공유스트리밍 | `radio/channel-stream/` + KV 동기화 | `#F59E0B` 앰버 |
 
 ---
 
@@ -86,8 +86,8 @@ yebomradio/
 ```
 coachdb-files/
   └── radio/
-        ├── channel-stream/     ← 채널5 예봄소리
-        ├── channel-list1/      ← 채널3 말씀전당
+        ├── channel-stream/     ← 채널5 봄소리 방송
+        ├── channel-list1/      ← 채널3 말씀의 전당
         │     └── _meta.json
         └── channel-list2/      ← 채널4 찬양의 숲
               └── _meta.json
