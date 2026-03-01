@@ -872,8 +872,8 @@ body {
       <button class="podcast-btn" id="btnNext" title="다음">⏭</button>
     </div>
     <div class="speed-wrap" id="speedWrap">
-      <button class="speed-btn" data-speed="0.75">0.75×</button>
       <button class="speed-btn active" data-speed="1">1×</button>
+      <button class="speed-btn" data-speed="1.1">1.1×</button>
       <button class="speed-btn" data-speed="1.25">1.25×</button>
       <button class="speed-btn" data-speed="1.5">1.5×</button>
     </div>
@@ -882,11 +882,11 @@ body {
   <!-- Extra Buttons -->
   <div class="extra-row" id="extraRow">
     <button class="extra-btn" id="btnRecord" style="display:none">🎙 녹음</button>
-    <button class="extra-btn" id="btnRecordDir" style="display:none">📁</button>
+    <button class="extra-btn" id="btnRecordFormat" style="display:none">WebM</button>
     <button class="extra-btn" id="btnTrackList" style="display:none">📋 목록</button>
   </div>
-  <div class="record-dir-row" id="recordDirRow">
-    <span class="record-dir-path" id="recordDirPath" title="클릭하여 저장 경로 변경"></span>
+  <div class="record-dir-row" id="recordTimerRow" style="display:none">
+    <span class="record-dir-path" id="recordTimer" style="color:var(--red)">⏺ 00:00</span>
   </div>
 
   <!-- Glass Control Panel -->
@@ -1034,9 +1034,24 @@ let sleepSecs   = 0;
 let sleepTimer  = null;
 let sleepCountdown = null;
 
-// Recording
-let recorderConnected = false;
+// Recording (browser-native)
 let isRecording = false;
+let audioCtx       = null;
+let gainNode       = null;
+let recDestination = null;
+let recAnalyser    = null;
+let mediaRecorder  = null;
+let recordedChunks = [];
+let recSegmentNum  = 0;
+let recStartTime   = 0;
+let recTimerInterval = null;
+let recFormat      = localStorage.getItem('radio-rec-format') || 'webm'; // 'webm' or 'mp3'
+let recSilenceStart = 0;
+let recSilenceTimer = null;
+const REC_SILENCE_THRESHOLD = 50 / 32767; // RMS ≈ 0.00153
+const REC_SILENCE_DURATION = 1000; // 1초
+let hlsSourceNode  = null;
+let howlSourceNode = null;
 
 // Admin
 let adminChannel   = 'list1';
@@ -1080,10 +1095,10 @@ const btnNext       = $('btnNext');
 const btnShuffle    = $('btnShuffle');
 const btnRepeat     = $('btnRepeat');
 const volSlider     = $('volSlider');
-const btnRecord     = $('btnRecord');
-const btnRecordDir  = $('btnRecordDir');
-const recordDirRow  = $('recordDirRow');
-const recordDirPath = $('recordDirPath');
+const btnRecord       = $('btnRecord');
+const btnRecordFormat = $('btnRecordFormat');
+const recordTimerRow  = $('recordTimerRow');
+const recordTimerEl   = $('recordTimer');
 const btnTrackList  = $('btnTrackList');
 const trackPanel    = $('trackPanel');
 const trackListEl   = $('trackList');
@@ -1234,22 +1249,51 @@ function ensureAudioEl() {
   return audioEl;
 }
 
-async function playHls(url) {
+function initAudioContext() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = currentVolume;
+  recDestination = audioCtx.createMediaStreamDestination();
+  recAnalyser = audioCtx.createAnalyser();
+  recAnalyser.fftSize = 2048;
+  gainNode.connect(audioCtx.destination);
+  gainNode.connect(recDestination);
+  gainNode.connect(recAnalyser);
+}
+
+async function playHls(url, useProxy) {
   if (currentHls) { currentHls.destroy(); currentHls = null; }
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
 
   const el = ensureAudioEl();
-  el.volume = currentVolume;
+  initAudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Connect audio element to AudioContext (only once)
+  if (!hlsSourceNode) {
+    hlsSourceNode = audioCtx.createMediaElementSource(el);
+    hlsSourceNode.connect(gainNode);
+  }
+  el.volume = 1; // volume controlled by gainNode
 
   const Hls = await loadHlsJs();
   if (Hls.isSupported()) {
-    const hls = new Hls({
+    const hlsConfig = {
       enableWorker: false,
       lowLatencyMode: true,
       backBufferLength: 30,
       maxBufferLength: 30,
-      xhrSetup: xhr => { xhr.withCredentials = false; },
-    });
+    };
+    if (useProxy) {
+      hlsConfig.xhrSetup = (xhr, reqUrl) => {
+        const proxyUrl = WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(reqUrl);
+        xhr.open('GET', proxyUrl, true);
+      };
+    } else {
+      hlsConfig.xhrSetup = xhr => { xhr.withCredentials = false; };
+    }
+    const hls = new Hls(hlsConfig);
     hls.loadSource(url);
     hls.attachMedia(el);
     await new Promise((resolve, reject) => {
@@ -1273,8 +1317,6 @@ async function playHls(url) {
     updatePlayBtn(true);
     startVis();
   } catch (playErr) {
-    // Autoplay 정책에 의한 실패 — HLS는 이미 로드됨
-    // 사용자가 play 버튼 클릭하면 재생됨
     console.log('Autoplay blocked, user interaction needed:', playErr.message);
     isPlaying = false;
     updatePlayBtn(false);
@@ -1523,6 +1565,23 @@ function initCarouselScroll() {
       }
     }, 150);
   });
+
+  // Infinite wrap: swipe past edges
+  let touchStartX = 0;
+  carouselEl.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+  carouselEl.addEventListener('touchend', e => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    // Swipe left at rightmost → go to first
+    if (diff > 50 && focusedIndex === CHANNELS.length - 1) {
+      scrollToChannel(0);
+    }
+    // Swipe right at leftmost → go to last
+    if (diff < -50 && focusedIndex === 0) {
+      scrollToChannel(CHANNELS.length - 1);
+    }
+  });
 }
 
 function scrollToChannel(idx) {
@@ -1615,9 +1674,10 @@ async function enterChannel(channel) {
   btnTrackList.style.display = (isR2 || isCh5) ? '' : 'none';
   btnShuffle.style.display   = isR2 ? '' : 'none';
   btnRepeat.style.display    = isR2 ? '' : 'none';
-  btnRecord.style.display    = isLive ? '' : 'none';
-  btnRecordDir.style.display = isLive ? '' : 'none';
-  recordDirRow.style.display = (isLive && recorderConnected) ? 'flex' : 'none';
+  const canRecord = isLive || isCh5;
+  btnRecord.style.display       = canRecord ? '' : 'none';
+  btnRecordFormat.style.display  = canRecord ? '' : 'none';
+  recordTimerRow.style.display = 'none';
 
   // Reset seek bar
   seekFill.style.width = '0%';
@@ -1672,7 +1732,7 @@ async function loadKbs() {
     const res = await fetch(WORKER_URL + '/api/kbs');
     const { streamUrl: sUrl, programTitle } = await res.json();
     nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + (programTitle || 'KBS 클래식 FM');
-    await playHls(sUrl);
+    await playHls(sUrl, true);
 
     // Refresh program title every 60s
     kbsRefreshTimer = setInterval(async () => {
@@ -1709,7 +1769,7 @@ async function loadFebc() {
     } catch {}
 
     nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + title;
-    await playHls(FEBC_URL);
+    await playHls(FEBC_URL, true);
 
     febcRefreshTimer = setInterval(async () => {
       if (currentChannel !== 2 || !isPlaying) return;
@@ -1785,13 +1845,14 @@ async function pollCh5State() {
     currentHowl = new Howl({
       src: [streamUrl(state.trackKey)],
       html5: true,
-      volume: currentVolume,
+      volume: 1,
       onplay: function() {
         isPlaying = true;
         updatePlayBtn(true);
         startVis();
         if (targetTime > 1) currentHowl.seek(targetTime);
         startSeekUpdate();
+        connectHowlToAudioCtx();
       },
       onpause: function() { isPlaying = false; updatePlayBtn(false); stopVis(); },
       onstop: function() { isPlaying = false; updatePlayBtn(false); stopVis(); },
@@ -1877,159 +1938,194 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-//  RECORDING (Phase 5)
+//  RECORDING — Browser-native (MediaRecorder + AudioContext)
 // ══════════════════════════════════════════════════════════════
 
-// 즉시 1회 + 5초마다 health check
-let currentRecordDir = '';
-async function checkRecorderHealth() {
+function connectHowlToAudioCtx() {
+  if (!audioCtx || !currentHowl) return;
   try {
-    const r = await fetch('http://localhost:8090/health', { signal: AbortSignal.timeout(2000) });
-    const d = await r.json();
-    recorderConnected = d.status === 'ok';
-    if (recorderConnected && d.output_dir) {
-      currentRecordDir = d.output_dir;
-      // localStorage에 저장된 경로가 있고 서버와 다르면 서버에 적용
-      const savedDir = localStorage.getItem('radio-record-dir');
-      if (savedDir && savedDir !== d.output_dir) {
-        await syncRecordDir(savedDir);
-      } else {
-        updateRecordDirUI();
-      }
-    }
-  } catch {
-    recorderConnected = false;
-  }
-  updateRecordBtn();
-}
-checkRecorderHealth(); // 페이지 로드 즉시 실행
-setInterval(checkRecorderHealth, 5000);
-
-function updateRecordDirUI() {
-  const isLive = currentChannel === 1 || currentChannel === 2;
-  recordDirRow.style.display = (isLive && recorderConnected && currentRecordDir) ? 'flex' : 'none';
-  recordDirPath.textContent = currentRecordDir || '';
-  recordDirPath.title = currentRecordDir ? '저장 경로: ' + currentRecordDir : '';
+    const node = currentHowl._sounds[0]?._node;
+    if (!node || node._acConnected) return;
+    initAudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const src = audioCtx.createMediaElementSource(node);
+    src.connect(gainNode);
+    node._acConnected = true;
+    howlSourceNode = src;
+  } catch (e) { console.log('howl AC connect:', e.message); }
 }
 
-async function syncRecordDir(dirPath) {
-  try {
-    const r = await fetch('http://localhost:8090/config/output-dir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ output_dir: dirPath }),
-      signal: AbortSignal.timeout(3000),
-    });
-    const d = await r.json();
-    if (r.ok) {
-      currentRecordDir = d.output_dir;
-      localStorage.setItem('radio-record-dir', d.output_dir);
-    } else {
-      // 잘못된 경로이면 localStorage 초기화
-      localStorage.removeItem('radio-record-dir');
-    }
-  } catch { /* 무시 */ }
-  updateRecordDirUI();
-}
-
-async function changeRecordDir() {
-  if (!recorderConnected) {
-    showToast('녹음서버가 연결되지 않았습니다.');
-    return;
-  }
-  const newDir = prompt('녹음 파일 저장 경로를 입력하세요:', currentRecordDir || '');
-  if (!newDir || newDir.trim() === '' || newDir.trim() === currentRecordDir) return;
-  try {
-    const r = await fetch('http://localhost:8090/config/output-dir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ output_dir: newDir.trim() }),
-      signal: AbortSignal.timeout(3000),
-    });
-    const d = await r.json();
-    if (r.ok) {
-      currentRecordDir = d.output_dir;
-      localStorage.setItem('radio-record-dir', d.output_dir);
-      updateRecordDirUI();
-      showToast('저장 경로 변경: ' + d.output_dir);
-    } else {
-      showToast('경로 변경 실패: ' + (d.detail || '알 수 없는 오류'));
-    }
-  } catch (e) {
-    showToast('녹음서버 연결 실패: ' + e.message);
-  }
-}
-
-function updateRecordBtn() {
-  if (currentChannel !== 1 && currentChannel !== 2) return;
-  if (isRecording) {
-    btnRecord.className = 'extra-btn recording';
-    btnRecord.textContent = '⏹ 녹음 중';
-  } else {
-    btnRecord.className = 'extra-btn';
-    btnRecord.textContent = recorderConnected ? '🎙 녹음' : '🎙 녹음 (연결안됨)';
-  }
-  updateRecordDirUI();
-}
-
-async function startRecording() {
-  if (!recorderConnected) {
-    showToast('녹음서버가 연결되지 않았습니다. AudioRecorder를 실행해주세요.');
-    return;
-  }
+function generateRecFilename() {
   const channelName = CHANNELS.find(c => c.num === currentChannel)?.name || '';
-  // nowPlayingEl에서 프로그램명 추출 (LIVE 뱃지 텍스트 제거)
   const rawText = nowPlayingEl.textContent || '';
   const progMatch = rawText.replace(/^LIVE\s*/, '').replace(/^ON AIR\s*/, '').trim();
   const ts = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(2, 14);
-  const filename = (channelName + (progMatch || '') + ts).replace(/[\\/:*?"<>|]/g, '');
+  return (channelName + '_' + (progMatch || '') + '_' + ts).replace(/[\\/:*?"<>|]/g, '');
+}
 
-  try {
-    const res = await fetch('http://localhost:8090/record/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: 'system',
-        filename: filename,
-        mode: 'auto',
-        silence_threshold: 100,
-        silence_duration: 1,
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
-    const data = await res.json();
-    if (res.ok && data.recording) {
-      isRecording = true;
-      updateRecordBtn();
-      showToast('녹음 시작: ' + filename);
-    } else {
-      showToast('녹음 시작 실패: ' + (data.detail || '알 수 없는 오류'));
-    }
-  } catch (e) {
-    showToast('녹음서버 연결 실패: ' + e.message);
+function updateRecordBtn() {
+  const canRecord = currentChannel === 1 || currentChannel === 2 || currentChannel === 5;
+  if (!canRecord) return;
+  if (isRecording) {
+    btnRecord.className = 'extra-btn recording';
+    btnRecord.textContent = '⏹ 녹음 중';
+    recordTimerRow.style.display = 'flex';
+  } else {
+    btnRecord.className = 'extra-btn';
+    btnRecord.textContent = '🎙 녹음';
+    recordTimerRow.style.display = 'none';
   }
 }
 
-async function stopRecording() {
-  if (!isRecording) return;
-  try {
-    const res = await fetch('http://localhost:8090/record/stop', {
-      method: 'POST',
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await res.json();
-    isRecording = false;
-    updateRecordBtn();
-    if (res.ok && data.file) {
-      const mins = Math.floor((data.duration || 0) / 60);
-      const secs = Math.round((data.duration || 0) % 60);
-      const fname = data.file.split(/[\\/]/).pop() || data.file;
-      showToast('녹음 완료: ' + fname + ' (' + mins + '분 ' + secs + '초)');
+function updateRecordFormatBtn() {
+  btnRecordFormat.textContent = recFormat === 'mp3' ? 'MP3' : 'WebM';
+}
+
+function toggleRecordFormat() {
+  recFormat = recFormat === 'webm' ? 'mp3' : 'webm';
+  localStorage.setItem('radio-rec-format', recFormat);
+  updateRecordFormatBtn();
+  showToast('녹음 형식: ' + (recFormat === 'mp3' ? 'MP3' : 'WebM/Opus'));
+}
+
+function startRecordTimer() {
+  recStartTime = Date.now();
+  clearInterval(recTimerInterval);
+  recTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const ss = String(elapsed % 60).padStart(2, '0');
+    recordTimerEl.textContent = '⏺ ' + mm + ':' + ss;
+  }, 1000);
+}
+
+function stopRecordTimer() {
+  clearInterval(recTimerInterval);
+  recordTimerEl.textContent = '⏺ 00:00';
+}
+
+function saveRecordedBlob(chunks, segLabel) {
+  if (chunks.length === 0) return;
+  const ext = recFormat === 'mp3' ? 'mp3' : 'webm';
+  const mimeType = recFormat === 'mp3' ? 'audio/mpeg' : 'audio/webm';
+  const blob = new Blob(chunks, { type: mimeType });
+  if (blob.size < 1000) return; // skip tiny blobs
+  const fname = generateRecFilename() + (segLabel ? '_' + segLabel : '') + '.' + ext;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showToast('녹음 저장: ' + fname);
+}
+
+// ── Silence detection for auto-split ────────────────────────
+function startSilenceDetection() {
+  if (!recAnalyser) return;
+  const bufLen = recAnalyser.fftSize;
+  const dataArr = new Float32Array(bufLen);
+  recSilenceStart = 0;
+
+  recSilenceTimer = setInterval(() => {
+    if (!isRecording || !recAnalyser) return;
+    recAnalyser.getFloatTimeDomainData(dataArr);
+    let sum = 0;
+    for (let i = 0; i < bufLen; i++) sum += dataArr[i] * dataArr[i];
+    const rms = Math.sqrt(sum / bufLen);
+
+    if (rms < REC_SILENCE_THRESHOLD) {
+      if (recSilenceStart === 0) recSilenceStart = Date.now();
+      else if (Date.now() - recSilenceStart >= REC_SILENCE_DURATION) {
+        // Silence detected → split
+        splitRecording();
+        recSilenceStart = 0;
+      }
+    } else {
+      recSilenceStart = 0;
     }
-  } catch {
-    isRecording = false;
-    updateRecordBtn();
+  }, 100);
+}
+
+function stopSilenceDetection() {
+  clearInterval(recSilenceTimer);
+  recSilenceTimer = null;
+  recSilenceStart = 0;
+}
+
+function splitRecording() {
+  if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+  // Stop current recorder (triggers onstop → save)
+  mediaRecorder.stop();
+  // Start new recorder for next segment
+  setTimeout(() => {
+    if (!isRecording) return;
+    recSegmentNum++;
+    recordedChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus' : 'audio/webm';
+    mediaRecorder = new MediaRecorder(recDestination.stream, {
+      mimeType: mimeType,
+      audioBitsPerSecond: 192000,
+    });
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const segLabel = String(recSegmentNum).padStart(3, '0');
+      saveRecordedBlob(recordedChunks, segLabel);
+    };
+    mediaRecorder.start(1000);
+  }, 50);
+}
+
+async function startRecording() {
+  if (!audioCtx || !recDestination) {
+    initAudioContext();
   }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  // Check if audio is connected to AudioContext
+  if (!isPlaying) {
+    showToast('먼저 재생을 시작해주세요');
+    return;
+  }
+
+  recSegmentNum = 0;
+  recordedChunks = [];
+
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus' : 'audio/webm';
+  mediaRecorder = new MediaRecorder(recDestination.stream, {
+    mimeType: mimeType,
+    audioBitsPerSecond: 192000,
+  });
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    const segLabel = recSegmentNum > 0 ? String(recSegmentNum).padStart(3, '0') : '';
+    saveRecordedBlob(recordedChunks, segLabel);
+  };
+
+  mediaRecorder.start(1000);
+  isRecording = true;
+  updateRecordBtn();
+  startRecordTimer();
+  startSilenceDetection();
+  showToast('녹음 시작');
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  stopSilenceDetection();
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
+  stopRecordTimer();
+  updateRecordBtn();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2449,8 +2545,9 @@ volSlider.value = currentVolume;
 volSlider.addEventListener('input', e => {
   const v = parseFloat(e.target.value);
   currentVolume = v;
-  if (currentHowl) currentHowl.volume(v);
-  if (audioEl) audioEl.volume = v;
+  if (gainNode) gainNode.gain.value = v;
+  if (currentHowl && !currentHowl._sounds[0]?._node?._acConnected) currentHowl.volume(v);
+  if (audioEl && !hlsSourceNode) audioEl.volume = v;
   localStorage.setItem('radio-volume', v);
   $('volIcon').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
 });
@@ -2521,8 +2618,8 @@ btnRecord.addEventListener('click', () => {
   if (isRecording) stopRecording();
   else startRecording();
 });
-btnRecordDir.addEventListener('click', changeRecordDir);
-recordDirPath.addEventListener('click', changeRecordDir);
+btnRecordFormat.addEventListener('click', toggleRecordFormat);
+updateRecordFormatBtn();
 
 // Header triple tap → Admin
 $('headerTitle').addEventListener('click', handleHeaderTap);

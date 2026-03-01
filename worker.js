@@ -230,6 +230,30 @@ export default {
         return json(data, cors);
       }
 
+      // ── HLS 프록시 (CORS 우회) ─────────────────────────────────
+      if (path === '/api/hls-proxy' && request.method === 'GET') {
+        const target = url.searchParams.get('url');
+        if (!target) return new Response('Missing url param', { status: 400, headers: cors });
+
+        let parsed;
+        try { parsed = new URL(target); } catch { return new Response('Invalid url', { status: 400, headers: cors }); }
+
+        const allowed = ['gscdn.kbs.co.kr', 'kbs.co.kr', 'febc.net', 'mlive2.febc.net'];
+        if (!allowed.some(d => parsed.hostname.endsWith(d))) {
+          return new Response('Domain not allowed', { status: 403, headers: cors });
+        }
+
+        const resp = await fetch(target, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YebomRadio/2.0)' },
+        });
+
+        const proxyHeaders = { ...cors };
+        const ct = resp.headers.get('content-type');
+        if (ct) proxyHeaders['Content-Type'] = ct;
+
+        return new Response(resp.body, { status: resp.status, headers: proxyHeaders });
+      }
+
       return new Response('Not Found', { status: 404, headers: cors });
 
     } catch (e) {
