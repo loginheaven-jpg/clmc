@@ -981,7 +981,9 @@ async function playHls(url, useProxy) {
           const origSuccess = callbacks.onSuccess;
           callbacks.onSuccess = (resp, stats, context, net) => {
             // Restore original URL so hls.js resolves relative paths against the real HLS server
+            // hls.js uses response.url in M3U8Parser for URL resolution, and context.url for reload URLs
             context.url = origUrl;
+            resp.url = origUrl;
             origSuccess(resp, stats, context, net);
           };
           this.loader.load(ctx, config, callbacks);
