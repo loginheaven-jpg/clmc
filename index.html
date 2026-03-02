@@ -13,6 +13,18 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+<script>
+// Howler audio pool monkey-patch: crossOrigin 설정으로 AudioContext 호환성 보장
+// createMediaElementSource()로 연결된 audio 요소가 풀에서 재사용될 때 CORS 차단 방지
+if (typeof Howler !== 'undefined' && Howler._obtainHtml5Audio) {
+  const _origObtain = Howler._obtainHtml5Audio;
+  Howler._obtainHtml5Audio = function() {
+    const node = _origObtain.call(this);
+    node.crossOrigin = 'anonymous';
+    return node;
+  };
+}
+</script>
 <style>
 :root {
   --bg-deep: #0D0B1A;
@@ -494,6 +506,26 @@ body{
       <button class="admin-live-btn" id="adminPauseBtn">⏸ 일시정지</button>
       <button class="admin-live-btn stop" id="adminStopBtn">⏹ 종료</button>
     </div>
+    <div class="admin-live-lock" id="adminLiveLock" style="display:none;padding:8px 12px;background:rgba(255,60,60,0.1);border-radius:8px;margin:8px 0;font-size:0.8rem;color:#ff9090">
+      <div id="adminLiveLockMsg"></div>
+      <button class="admin-live-btn stop" id="adminForceStopLive" style="margin-top:6px;font-size:0.75rem">라이브 강제 종료</button>
+    </div>
+    <div class="admin-storage-config" id="adminStorageConfig" style="display:none;padding:8px 12px;border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin:8px 0;font-size:0.8rem">
+      <div style="margin-bottom:6px;color:#ece4d8aa">보존 설정</div>
+      <div id="adminStorageInfo" style="color:#ece4d866;margin-bottom:6px"></div>
+      <select id="adminStorageLimit" style="background:#1a1726;color:#ece4d8;border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:4px 8px;font-size:0.8rem">
+        <option value="524288000">500 MB (~8시간)</option>
+        <option value="1073741824">1 GB (~17시간)</option>
+        <option value="2147483648" selected>2 GB (~34시간)</option>
+        <option value="3221225472">3 GB (~52시간)</option>
+        <option value="5368709120">5 GB (~86시간)</option>
+      </select>
+      <button class="extra-btn" id="adminSaveStorageLimit" style="margin-left:6px;font-size:0.75rem">저장</button>
+    </div>
+    <div id="adminSessionList" style="display:none;margin:8px 0">
+      <div style="font-size:0.8rem;color:#ece4d8aa;margin-bottom:6px">지난 방송</div>
+      <ul id="adminSessionListUl" style="list-style:none;padding:0;margin:0;max-height:200px;overflow-y:auto"></ul>
+    </div>
   </div>
   <div class="admin-section-title"><span>등록된 목록</span><button class="extra-btn" id="adminRefresh" style="font-size:0.75rem">새로고침</button></div>
   <ul class="admin-track-list" id="adminTrackList"></ul>
@@ -553,6 +585,19 @@ let dragSrcIdx = null;
 let ch5AdminState = null;
 
 let ch5PollTimer = null;
+
+// Live broadcast player
+let livePollTimer = null, liveNextTime = 0, liveLastChunk = -1;
+let liveSessionId = null, liveChunkDuration = 2.0;
+let liveScheduledSources = [];
+let liveMode = false; // true when live broadcast is active
+
+// Replay player
+let replaySessionId = null, replayChunkCount = 0, replayChunkDuration = 2.0;
+let replayCurrentChunk = 0, replayNextTime = 0, replayPlaying = false;
+let replayFeedTimer = null, replayScheduledSources = [];
+let replayMode = false; // true when replaying a past session
+
 let focusedIndex = 0;
 let deferredInstallPrompt = null;
 
@@ -897,6 +942,8 @@ function updatePlayBtn(playing) {
 function stopPlayback() {
   stopHls();
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
+  stopLivePlayer();
+  stopReplay();
   isPlaying = false;
   updatePlayBtn(false);
   cancelAnimationFrame(seekRaf);
@@ -961,10 +1008,9 @@ async function playHls(url, useProxy) {
   if (currentHls) { currentHls.destroy(); currentHls = null; }
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
   const el = ensureAudioEl();
-  initAudioContext();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  if (!hlsSourceNode) { hlsSourceNode = audioCtx.createMediaElementSource(el); hlsSourceNode.connect(gainNode); }
-  el.volume = 1;
+  // AudioContext는 녹음 시에만 생성 (lazy). 일반 재생은 직접 볼륨 제어
+  if (hlsSourceNode) { el.volume = 1; /* gainNode으로 볼륨 제어 */ }
+  else { el.volume = currentVolume; }
   const Hls = await loadHlsJs();
   if (Hls.isSupported()) {
     const hlsConfig = { enableWorker:false, lowLatencyMode:true, backBufferLength:30, maxBufferLength:30 };
@@ -1104,6 +1150,17 @@ function updateTrackCounter() {
 
 // ── Play/Pause Handler ──
 function handlePlayPause() {
+  // Live mode: stop/restart live player
+  if (liveMode) {
+    if (isPlaying) { stopLivePlayer(); isPlaying = false; updatePlayBtn(false); }
+    else { enterChannel(5); }
+    return;
+  }
+  // Replay mode: stop replay
+  if (replayMode) {
+    if (isPlaying) { stopReplay(); isPlaying = false; updatePlayBtn(false); }
+    return;
+  }
   if (currentChannel === 1 || currentChannel === 2) {
     if (isPlaying) {
       if (audioEl) audioEl.pause();
@@ -1169,6 +1226,15 @@ async function enterChannel(channel) {
     else { nowPlayingEl.textContent = '등록된 트랙이 없습니다'; }
   } else if (channel === 5) {
     await fetchTracks(5);
+    // Check live state first
+    try {
+      const liveRes = await fetch(WORKER_URL + '/api/live/state');
+      const liveState = await liveRes.json();
+      if (liveState.active && liveState.sessionId) {
+        startLivePlayer(liveState.sessionId, liveState.chunkDuration, liveState.latestChunk);
+        return;
+      }
+    } catch {}
     await startCh5Polling();
   }
 }
@@ -1235,6 +1301,20 @@ async function pollCh5State() {
   try {
     const res = await fetch(WORKER_URL + '/api/ch5/state');
     const state = await res.json();
+    // 라이브 모드 감지 → 라이브 플레이어로 전환
+    if (state.mode === 'live') {
+      clearInterval(ch5PollTimer);
+      if (!liveMode) {
+        try {
+          const lr = await fetch(WORKER_URL + '/api/live/state');
+          const ls = await lr.json();
+          if (ls.active && ls.sessionId) {
+            startLivePlayer(ls.sessionId, ls.chunkDuration, ls.latestChunk);
+          }
+        } catch {}
+      }
+      return;
+    }
     if (!state.trackKey) { nowPlayingEl.textContent = '현재 방송이 없습니다'; stopPlayback(); return; }
     let targetTime;
     if (state.paused) targetTime = state.currentTime || 0;
@@ -1252,8 +1332,8 @@ async function pollCh5State() {
     stopHls();
     currentTrackKey = state.trackKey; currentTrackName = state.trackName || ''; currentTrackIdx = idx >= 0 ? idx : 0;
     currentHowl = new Howl({
-      src: [streamUrl(state.trackKey)], html5: true, volume: 1,
-      onplay: function() { isPlaying = true; updatePlayBtn(true); if (targetTime > 1) currentHowl.seek(targetTime); startSeekUpdate(); connectHowlToAudioCtx(); },
+      src: [streamUrl(state.trackKey)], html5: true, volume: currentVolume,
+      onplay: function() { isPlaying = true; updatePlayBtn(true); if (targetTime > 1) currentHowl.seek(targetTime); startSeekUpdate(); },
       onpause: function() { isPlaying = false; updatePlayBtn(false); },
       onstop: function() { isPlaying = false; updatePlayBtn(false); },
       onend: function() { isPlaying = false; stopVis(); updatePlayBtn(false); nowPlayingEl.textContent = '방송이 종료되었습니다'; },
@@ -1296,11 +1376,11 @@ function connectHowlToAudioCtx() {
   try {
     const node = currentHowl._sounds[0]?._node;
     if (!node || node._acConnected) return;
-    initAudioContext();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    node.crossOrigin = 'anonymous';
     const src = audioCtx.createMediaElementSource(node);
     src.connect(gainNode);
     node._acConnected = true;
+    currentHowl.volume(1); // gainNode으로 볼륨 제어
     howlSourceNode = src;
   } catch (e) { console.log('howl AC connect:', e.message); }
 }
@@ -1375,9 +1455,21 @@ function splitRecording() {
   }, 50);
 }
 async function startRecording() {
-  if (!audioCtx || !recDestination) initAudioContext();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
   if (!isPlaying) { showToast('먼저 재생을 시작해주세요'); return; }
+  // AudioContext 초기화 (녹음 시에만 생성)
+  initAudioContext();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  gainNode.gain.value = currentVolume;
+  // 현재 재생 중인 오디오 소스를 AudioContext에 연결
+  const isHls = currentChannel === 1 || currentChannel === 2;
+  if (isHls && audioEl && !hlsSourceNode) {
+    hlsSourceNode = audioCtx.createMediaElementSource(audioEl);
+    hlsSourceNode.connect(gainNode);
+    audioEl.volume = 1; // gainNode으로 볼륨 제어
+  }
+  if (!isHls && currentHowl) {
+    connectHowlToAudioCtx();
+  }
   recSegmentNum = 0; recordedChunks = [];
   const mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
   mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType:mt, audioBitsPerSecond:192000});
@@ -1392,6 +1484,169 @@ function stopRecording() {
   isRecording = false; stopSilenceDetection();
   if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
   stopRecordTimer(); updateRecordBtn();
+}
+
+// ── Live Chunk Player ──
+function ensureLiveAudioCtx() {
+  initAudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function startLivePlayer(sessionId, chunkDuration, latestChunk) {
+  stopLivePlayer();
+  stopReplay();
+  ensureLiveAudioCtx();
+  liveSessionId = sessionId;
+  liveChunkDuration = chunkDuration || 2.0;
+  liveLastChunk = latestChunk > 2 ? latestChunk - 2 : -1; // start ~4s behind live edge
+  liveNextTime = 0;
+  liveMode = true;
+  isPlaying = true;
+  updatePlayBtn(true);
+  nowPlayingEl.innerHTML = '<span class="on-air-badge">LIVE</span> 라이브 방송';
+  liveBarFill.style.animation = 'liveBarShimmer 3s ease-in-out infinite';
+  livePollAndPlay(); // first fetch immediately
+  livePollTimer = setInterval(livePollAndPlay, 2000);
+}
+
+function stopLivePlayer() {
+  clearInterval(livePollTimer); livePollTimer = null;
+  liveScheduledSources.forEach(s => { try { s.stop(); } catch {} });
+  liveScheduledSources = [];
+  liveMode = false;
+  liveLastChunk = -1;
+  liveNextTime = 0;
+}
+
+async function livePollAndPlay() {
+  if (!liveMode || !liveSessionId) return;
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/state');
+    const state = await res.json();
+    if (!state.active) {
+      // live ended
+      stopLivePlayer();
+      isPlaying = false; updatePlayBtn(false);
+      nowPlayingEl.textContent = '라이브 방송이 종료되었습니다';
+      showToast('라이브 방송 종료');
+      // restart file polling
+      startCh5Polling();
+      return;
+    }
+    if (state.message) nowPlayingEl.innerHTML = '<span class="on-air-badge">LIVE</span> ' + state.message;
+    const latest = state.latestChunk;
+    if (latest > liveLastChunk) {
+      for (let i = liveLastChunk + 1; i <= latest; i++) {
+        fetchAndScheduleChunk(liveSessionId, i, liveChunkDuration);
+      }
+      liveLastChunk = latest;
+    }
+  } catch (e) { console.log('live poll error:', e.message); }
+}
+
+async function fetchAndScheduleChunk(sessionId, index, chunkDuration) {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/chunk/' + sessionId + '/' + index);
+    if (!res.ok) return;
+    const buf = await res.arrayBuffer();
+    const audioBuf = await audioCtx.decodeAudioData(buf);
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(gainNode);
+    // Schedule seamlessly
+    const now = audioCtx.currentTime;
+    if (liveNextTime < now + 0.05) liveNextTime = now + 0.05;
+    src.start(liveNextTime);
+    liveNextTime += audioBuf.duration || chunkDuration;
+    liveScheduledSources.push(src);
+    src.onended = () => {
+      const idx = liveScheduledSources.indexOf(src);
+      if (idx >= 0) liveScheduledSources.splice(idx, 1);
+    };
+  } catch (e) { console.log('chunk decode error:', e.message); }
+}
+
+// ── Replay Player ──
+function startReplay(session) {
+  stopPlayback();
+  ensureLiveAudioCtx();
+  replaySessionId = session.id;
+  replayChunkCount = session.chunkCount;
+  replayChunkDuration = session.chunkDuration || 2.0;
+  replayCurrentChunk = 0;
+  replayNextTime = 0;
+  replayScheduledSources = [];
+  replayPlaying = true;
+  replayMode = true;
+  isPlaying = true;
+  updatePlayBtn(true);
+  const ts = new Date(session.startedAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  nowPlayingEl.textContent = (session.title || '지난 방송') + ' — ' + ts;
+  // show playlist progress for seek
+  liveProgress.classList.remove('visible');
+  playlistProgress.classList.add('visible');
+  timeDur.textContent = formatTime(session.durationSec || session.chunkCount * session.chunkDuration);
+  replayFeedLoop();
+  replayFeedTimer = setInterval(replayFeedLoop, 500);
+}
+
+async function replayFeedLoop() {
+  if (!replayPlaying || !replaySessionId) return;
+  if (replayCurrentChunk >= replayChunkCount) {
+    // replay finished
+    clearInterval(replayFeedTimer); replayFeedTimer = null;
+    return;
+  }
+  // Schedule 3 chunks ahead
+  const now = audioCtx.currentTime;
+  while (replayCurrentChunk < replayChunkCount && (replayNextTime < now + 6)) {
+    await fetchAndScheduleReplayChunk(replaySessionId, replayCurrentChunk, replayChunkDuration);
+    replayCurrentChunk++;
+  }
+  // Update seek bar
+  const elapsed = audioCtx.currentTime;
+  const total = replayChunkCount * replayChunkDuration;
+  if (total > 0) {
+    seekFill.style.width = Math.min(100, elapsed / total * 100) + '%';
+    timePos.textContent = formatTime(Math.floor(elapsed));
+  }
+}
+
+async function fetchAndScheduleReplayChunk(sessionId, index, chunkDuration) {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/chunk/' + sessionId + '/' + index);
+    if (!res.ok) return;
+    const buf = await res.arrayBuffer();
+    const audioBuf = await audioCtx.decodeAudioData(buf);
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(gainNode);
+    const now = audioCtx.currentTime;
+    if (replayNextTime < now + 0.05) replayNextTime = now + 0.05;
+    src.start(replayNextTime);
+    replayNextTime += audioBuf.duration || chunkDuration;
+    replayScheduledSources.push(src);
+    src.onended = () => {
+      const idx = replayScheduledSources.indexOf(src);
+      if (idx >= 0) replayScheduledSources.splice(idx, 1);
+      // Check if all chunks done
+      if (replayScheduledSources.length === 0 && replayCurrentChunk >= replayChunkCount) {
+        replayPlaying = false; replayMode = false;
+        isPlaying = false; updatePlayBtn(false);
+        showToast('다시듣기 종료');
+      }
+    };
+  } catch (e) { console.log('replay chunk error:', e.message); }
+}
+
+function stopReplay() {
+  clearInterval(replayFeedTimer); replayFeedTimer = null;
+  replayScheduledSources.forEach(s => { try { s.stop(); } catch {} });
+  replayScheduledSources = [];
+  replayPlaying = false;
+  replayMode = false;
+  replayCurrentChunk = 0;
+  replayNextTime = 0;
 }
 
 // ── Sleep Timer ──
@@ -1429,6 +1684,36 @@ function updateTrackListUI() {
     li.addEventListener('click', () => { closeTrackPanel(); if (currentChannel === 5) return; playTrack(currentChannel, i, 0); });
     trackListEl.appendChild(li);
   });
+  // CH5: 지난 방송 섹션
+  if (currentChannel === 5) {
+    loadPastBroadcasts();
+  }
+}
+async function loadPastBroadcasts() {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/sessions');
+    const data = await res.json();
+    if (!data.sessions || data.sessions.length === 0) return;
+    const divider = document.createElement('li');
+    divider.style.cssText = 'padding:10px 0 6px;font-size:0.8rem;color:#ece4d8aa;border-top:1px solid rgba(255,255,255,0.06);margin-top:8px';
+    divider.textContent = '지난 라이브 방송';
+    trackListEl.appendChild(divider);
+    data.sessions.forEach(s => {
+      const li = document.createElement('li');
+      li.className = 'track-item';
+      const ts = new Date(s.startedAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const dur = formatTime(Math.floor(s.durationSec));
+      li.innerHTML = '<span class="track-item-name">' + (s.title || ts) + ' <span style="opacity:0.4">' + dur + '</span></span>';
+      li.addEventListener('click', () => {
+        closeTrackPanel();
+        startReplay({
+          id: s.id, startedAt: s.startedAt, durationSec: s.durationSec,
+          chunkCount: s.chunkCount, chunkDuration: s.chunkDuration, title: s.title
+        });
+      });
+      trackListEl.appendChild(li);
+    });
+  } catch {}
 }
 function openTrackPanel() { updateTrackListUI(); trackPanel.classList.add('open'); backdrop.classList.add('open'); }
 function closeTrackPanel() { trackPanel.classList.remove('open'); backdrop.classList.remove('open'); }
@@ -1508,11 +1793,21 @@ async function saveAdminOrder() {
 async function goOnAir(track) {
   try {
     const duration = await new Promise((resolve, reject) => { const h = new Howl({src:[streamUrl(track.key)],html5:true,onload:()=>{resolve(h.duration());h.unload();},onloaderror:(_,e)=>reject(e)}); setTimeout(()=>reject(new Error('timeout')),30000); });
-    await fetch(WORKER_URL+'/api/ch5/state',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminKey},body:JSON.stringify({trackKey:track.key,trackName:track.name,duration,currentTime:0,paused:false})});
+    const res = await fetch(WORKER_URL+'/api/ch5/state',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminKey},body:JSON.stringify({trackKey:track.key,trackName:track.name,duration,currentTime:0,paused:false})});
+    if (res.status === 409) {
+      const err = await res.json();
+      showToast(err.message || '라이브 방송 중에는 파일 ON AIR를 사용할 수 없습니다');
+      return;
+    }
     showToast('ON AIR: '+track.name); loadAdminCh5State();
   } catch { showToast('ON AIR 실패'); }
 }
-async function loadAdminCh5State() { try { const res = await fetch(WORKER_URL+'/api/ch5/state'); ch5AdminState = await res.json(); renderAdminCh5(); } catch {} }
+async function loadAdminCh5State() {
+  try { const res = await fetch(WORKER_URL+'/api/ch5/state'); ch5AdminState = await res.json(); renderAdminCh5(); } catch {}
+  checkLiveStatusForAdmin();
+  loadLiveConfig();
+  loadSessionList();
+}
 function renderAdminCh5() {
   const s = ch5AdminState; const statusEl = $('adminLiveStatus'); const ctrlEl = $('adminLiveControls');
   if (!s || !s.trackKey) { statusEl.textContent = '방송 대기 중'; ctrlEl.style.display = 'none'; return; }
@@ -1529,6 +1824,105 @@ async function toggleCh5Pause() {
 async function stopCh5Broadcast() {
   await fetch(WORKER_URL+'/api/ch5/state',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminKey},body:JSON.stringify({trackKey:null,paused:true,currentTime:0})});
   showToast('방송 종료'); loadAdminCh5State();
+}
+
+// ── Admin Live Management ──
+async function checkLiveStatusForAdmin() {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/state');
+    const state = await res.json();
+    const lockEl = $('adminLiveLock');
+    if (state.active) {
+      const elapsed = Math.floor((Date.now() - state.startedAt) / 1000);
+      $('adminLiveLockMsg').textContent = '호스트 앱에서 라이브 방송 중 (' + formatTime(elapsed) + ') — 라이브 중에는 파일 ON AIR 비활성';
+      lockEl.style.display = '';
+      // disable ON AIR buttons
+      document.querySelectorAll('.admin-onair-btn').forEach(b => { b.disabled = true; b.style.opacity = '0.4'; });
+    } else {
+      lockEl.style.display = 'none';
+      document.querySelectorAll('.admin-onair-btn').forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    }
+  } catch {}
+}
+
+async function forceStopLive() {
+  if (!confirm('라이브 방송을 강제 종료하시겠습니까?')) return;
+  try {
+    await fetch(WORKER_URL + '/api/live/state', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey }, body: JSON.stringify({ action: 'stop' }) });
+    showToast('라이브 방송 강제 종료');
+    checkLiveStatusForAdmin();
+    loadAdminCh5State();
+  } catch { showToast('강제 종료 실패'); }
+}
+
+async function loadLiveConfig() {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/config');
+    const cfg = await res.json();
+    $('adminStorageConfig').style.display = '';
+    $('adminStorageLimit').value = String(cfg.storageLimit);
+    const usageMB = (cfg.currentUsage / 1048576).toFixed(1);
+    const limitLabel = cfg.storageLimitLabel || formatAdminBytes(cfg.storageLimit);
+    const durStr = formatTime(Math.floor(cfg.totalDurationSec));
+    $('adminStorageInfo').textContent = '사용: ' + usageMB + ' MB / ' + limitLabel + ' | ' + cfg.sessionCount + '세션, ' + durStr;
+  } catch {}
+}
+
+function formatAdminBytes(bytes) {
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+
+async function saveLiveStorageLimit() {
+  const limit = parseInt($('adminStorageLimit').value);
+  try {
+    await fetch(WORKER_URL + '/api/live/config', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey }, body: JSON.stringify({ storageLimit: limit }) });
+    showToast('보존 한도 저장 완료');
+    loadLiveConfig();
+  } catch { showToast('저장 실패'); }
+}
+
+async function loadSessionList() {
+  try {
+    const res = await fetch(WORKER_URL + '/api/live/sessions');
+    const data = await res.json();
+    const ul = $('adminSessionListUl');
+    const container = $('adminSessionList');
+    if (!data.sessions || data.sessions.length === 0) { container.style.display = 'none'; return; }
+    container.style.display = '';
+    ul.innerHTML = '';
+    data.sessions.forEach(s => {
+      const li = document.createElement('li');
+      li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.78rem;color:#ece4d8aa';
+      const ts = new Date(s.startedAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const dur = formatTime(Math.floor(s.durationSec));
+      li.innerHTML = '<span>' + (s.title || ts) + ' <span style="color:#ece4d855">' + dur + '</span></span>' +
+        '<span><button class="extra-btn session-listen-btn" data-sid="' + s.id + '" data-start="' + s.startedAt + '" data-dur="' + s.durationSec + '" data-count="' + s.chunkCount + '" data-cdur="' + s.chunkDuration + '" data-title="' + (s.title || '') + '" style="font-size:0.7rem;margin-right:4px">듣기</button>' +
+        '<button class="extra-btn session-delete-btn" data-sid="' + s.id + '" style="font-size:0.7rem;color:#ff7070">삭제</button></span>';
+      ul.appendChild(li);
+    });
+    ul.querySelectorAll('.session-listen-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        closeAdmin();
+        startReplay({
+          id: btn.dataset.sid, startedAt: parseInt(btn.dataset.start),
+          durationSec: parseFloat(btn.dataset.dur), chunkCount: parseInt(btn.dataset.count),
+          chunkDuration: parseFloat(btn.dataset.cdur), title: btn.dataset.title
+        });
+      });
+    });
+    ul.querySelectorAll('.session-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('이 방송 녹음을 삭제하시겠습니까?')) return;
+        try {
+          await fetch(WORKER_URL + '/api/live/sessions/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey }, body: JSON.stringify({ sessionId: btn.dataset.sid }) });
+          showToast('삭제 완료');
+          loadSessionList();
+          loadLiveConfig();
+        } catch { showToast('삭제 실패'); }
+      });
+    });
+  } catch {}
 }
 
 // ── Event Listeners ──
@@ -1617,6 +2011,8 @@ $('saveOrderBtn').addEventListener('click', saveAdminOrder);
 $('adminRefresh').addEventListener('click', () => loadAdminTracks(adminChannel));
 $('adminPauseBtn').addEventListener('click', toggleCh5Pause);
 $('adminStopBtn').addEventListener('click', () => { if (confirm('방송을 종료하시겠습니까?')) stopCh5Broadcast(); });
+$('adminForceStopLive').addEventListener('click', forceStopLive);
+$('adminSaveStorageLimit').addEventListener('click', saveLiveStorageLimit);
 
 // ── PWA ──
 function initPwa() {

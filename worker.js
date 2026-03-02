@@ -24,28 +24,27 @@ export default {
   async fetch(request, env, ctx) {
     const url  = new URL(request.url);
     const path = url.pathname;
+    const method = request.method;
 
     const cors = corsHeaders(request);
 
     // OPTIONS preflight
-    if (request.method === 'OPTIONS') {
+    if (method === 'OPTIONS') {
       return new Response(null, { headers: cors });
     }
 
     try {
 
       // ── 트랙 목록 (_meta.json 기준) ───────────────────────────
-      if (path === '/api/tracks' && request.method === 'GET') {
+      if (path === '/api/tracks' && method === 'GET') {
         const channel = url.searchParams.get('channel') || 'stream';
         const prefix  = DIR_MAP[channel] || DIR_MAP.stream;
 
-        // R2 파일 목록
         const list = await env.RADIO_BUCKET.list({ prefix, limit: 1000 });
         const audioFiles = list.objects.filter(
           obj => /\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(obj.key)
         );
 
-        // _meta.json 읽기
         const metaKey = prefix + '_meta.json';
         const metaObj = await env.RADIO_BUCKET.get(metaKey);
         let meta = null;
@@ -55,7 +54,6 @@ export default {
 
         let tracks;
         if (meta && Array.isArray(meta)) {
-          // meta 기준 정렬, R2에 없는 항목 제거
           const r2Keys = new Set(audioFiles.map(o => o.key));
           tracks = meta
             .filter(m => r2Keys.has(m.key))
@@ -66,7 +64,6 @@ export default {
               order: m.order ?? i,
             }));
         } else {
-          // meta 없으면 R2 목록에서 생성
           tracks = audioFiles.map((obj, i) => ({
             key:   obj.key,
             name:  decodeFileName(obj.key.replace(prefix, '')),
@@ -79,11 +76,10 @@ export default {
       }
 
       // ── 오디오 스트리밍 (Range Request) ────────────────────────
-      if (path.startsWith('/api/stream/') && request.method === 'GET') {
+      if (path.startsWith('/api/stream/') && method === 'GET') {
         const key = decodeURIComponent(path.slice('/api/stream/'.length));
         const rangeHeader = request.headers.get('Range');
 
-        // First get object head to know total size
         const headObj = await env.RADIO_BUCKET.head(key);
         if (!headObj) return new Response('Not Found', { status: 404, headers: cors });
 
@@ -120,16 +116,28 @@ export default {
       }
 
       // ── 채널5 상태 읽기 (KV) ──────────────────────────────────
-      if (path === '/api/ch5/state' && request.method === 'GET') {
+      if (path === '/api/ch5/state' && method === 'GET') {
         const state = await env.RADIO_KV.get('ch5_state', 'json');
-        return json(state || { trackKey: null, paused: true, currentTime: 0 }, cors);
+        return json(state || { mode: 'file', trackKey: null, paused: true, currentTime: 0 }, cors);
       }
 
-      // ── 채널5 상태 쓰기 (관리자) ──────────────────────────────
-      if (path === '/api/ch5/state' && request.method === 'POST') {
+      // ── 채널5 상태 쓰기 (관리자) — 라이브 잠금 추가 ─────────
+      if (path === '/api/ch5/state' && method === 'POST') {
         if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
+
+        // ★ 라이브 활성 시 거부
+        const liveRaw = await env.RADIO_KV.get('live_state');
+        if (liveRaw) {
+          const live = JSON.parse(liveRaw);
+          if (live.active) {
+            return json({ error: 'live_active',
+              message: '라이브 방송 중에는 파일 ON AIR를 사용할 수 없습니다.' }, cors, 409);
+          }
+        }
+
         const body = await request.json();
         const state = {
+          mode:       'file',
           trackKey:   body.trackKey,
           trackName:  body.trackName,
           duration:   body.duration || 0,
@@ -145,7 +153,7 @@ export default {
       }
 
       // ── 파일 업로드 (관리자) ───────────────────────────────────
-      if (path === '/api/upload' && request.method === 'POST') {
+      if (path === '/api/upload' && method === 'POST') {
         if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
         const formData = await request.formData();
         const files   = formData.getAll('files');
@@ -161,7 +169,6 @@ export default {
             httpMetadata: { contentType: file.type || 'audio/mpeg' },
           });
 
-          // _meta.json 갱신
           const metaKey = prefix + '_meta.json';
           const metaObj = await env.RADIO_BUCKET.get(metaKey);
           let meta = [];
@@ -182,12 +189,11 @@ export default {
       }
 
       // ── 파일 삭제 (관리자) ─────────────────────────────────────
-      if (path === '/api/delete' && request.method === 'POST') {
+      if (path === '/api/delete' && method === 'POST') {
         if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
         const { key, channel } = await request.json();
         await env.RADIO_BUCKET.delete(key);
 
-        // _meta.json 갱신
         const ch = channel || guessChannel(key);
         const prefix  = DIR_MAP[ch] || DIR_MAP.stream;
         const metaKey = prefix + '_meta.json';
@@ -207,7 +213,7 @@ export default {
       }
 
       // ── _meta.json 전체 덮어쓰기 (관리자) ─────────────────────
-      if (path === '/api/meta' && request.method === 'POST') {
+      if (path === '/api/meta' && method === 'POST') {
         if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
         const { channel, tracks } = await request.json();
         const prefix  = DIR_MAP[channel] || DIR_MAP.stream;
@@ -218,20 +224,69 @@ export default {
         return json({ ok: true }, cors);
       }
 
+      // ══════════════════════════════════════════════════════════
+      // ── 라이브 방송 API ────────────────────────────────────────
+      // ══════════════════════════════════════════════════════════
+
+      // ── 라이브 청크 업로드 ─────────────────────────────────────
+      if (path === '/api/live/chunk' && method === 'POST') {
+        if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
+        return handleLiveChunk(request, env, cors);
+      }
+
+      // ── 라이브 청크 다운로드 ───────────────────────────────────
+      if (method === 'GET' && path.match(/^\/api\/live\/chunk\/[\w-]+\/\d+$/)) {
+        const parts = path.split('/');
+        return handleGetLiveChunk(env, cors, parts[4], parseInt(parts[5]));
+      }
+
+      // ── 라이브 상태 읽기 (Cache API 1초) ──────────────────────
+      if (path === '/api/live/state' && method === 'GET') {
+        return handleGetLiveState(request, env, cors);
+      }
+
+      // ── 라이브 상태 쓰기 (시작/종료/메시지) ───────────────────
+      if (path === '/api/live/state' && method === 'POST') {
+        if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
+        return handlePostLiveState(request, env, cors);
+      }
+
+      // ── 라이브 보존 설정 읽기 ──────────────────────────────────
+      if (path === '/api/live/config' && method === 'GET') {
+        return handleGetLiveConfig(env, cors);
+      }
+
+      // ── 라이브 보존 설정 변경 ──────────────────────────────────
+      if (path === '/api/live/config' && method === 'POST') {
+        if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
+        return handlePostLiveConfig(request, env, cors);
+      }
+
+      // ── 저장된 방송 세션 목록 ──────────────────────────────────
+      if (path === '/api/live/sessions' && method === 'GET') {
+        return handleGetSessions(env, cors);
+      }
+
+      // ── 세션 수동 삭제 ─────────────────────────────────────────
+      if (path === '/api/live/sessions/delete' && method === 'POST') {
+        if (!isAdmin(request, env)) return new Response('Unauthorized', { status: 401, headers: cors });
+        return handleDeleteSession(request, env, cors);
+      }
+
       // ── 극동방송 편성표 프록시 ─────────────────────────────────
-      if (path === '/api/febc-schedule' && request.method === 'GET') {
+      if (path === '/api/febc-schedule' && method === 'GET') {
         const data = await getFebcSchedule();
         return json(data, cors);
       }
 
       // ── KBS 프록시 ─────────────────────────────────────────────
-      if (path === '/api/kbs' && request.method === 'GET') {
+      if (path === '/api/kbs' && method === 'GET') {
         const data = await getKbsInfo();
         return json(data, cors);
       }
 
       // ── HLS 프록시 (CORS 우회) ─────────────────────────────────
-      if (path === '/api/hls-proxy' && request.method === 'GET') {
+      if (path === '/api/hls-proxy' && method === 'GET') {
         const target = url.searchParams.get('url');
         if (!target) return new Response('Missing url param', { status: 400, headers: cors });
 
@@ -262,6 +317,290 @@ export default {
   }
 };
 
+// ══════════════════════════════════════════════════════════════════
+// ── 라이브 방송 핸들러 ────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+async function handleLiveChunk(request, env, cors) {
+  const chunkIndex = parseInt(request.headers.get('X-Chunk-Index'));
+  const chunkDuration = parseFloat(request.headers.get('X-Chunk-Duration') || '2.0');
+  const body = await request.arrayBuffer();
+  const chunkSize = body.byteLength;
+
+  const stateRaw = await env.RADIO_KV.get('live_state');
+  if (!stateRaw) return json({ error: 'no_session' }, cors, 400);
+  const state = JSON.parse(stateRaw);
+  if (!state.active || !state.sessionId) return json({ error: 'not_active' }, cors, 400);
+
+  const key = `radio/live/${state.sessionId}/chunk-${String(chunkIndex).padStart(8, '0')}.ogg`;
+  await env.RADIO_BUCKET.put(key, body, {
+    httpMetadata: { contentType: 'audio/ogg' }
+  });
+
+  // KV 갱신 (5청크마다 — 쓰기 한도 절약)
+  if (chunkIndex % 5 === 0) {
+    state.latestChunk = chunkIndex;
+    state.updatedAt = Date.now();
+    await env.RADIO_KV.put('live_state', JSON.stringify(state));
+  }
+
+  // sessions.json 갱신 + 보존 정책 (10청크마다)
+  if (chunkIndex % 10 === 0) {
+    await updateSessionAndEnforceLimit(env, state.sessionId, chunkIndex, chunkSize * 10, chunkDuration);
+  }
+
+  return json({ ok: true, index: chunkIndex }, cors);
+}
+
+async function handleGetLiveChunk(env, cors, sessionId, index) {
+  const key = `radio/live/${sessionId}/chunk-${String(index).padStart(8, '0')}.ogg`;
+  const obj = await env.RADIO_BUCKET.get(key);
+  if (!obj) return new Response('Not found', { status: 404, headers: cors });
+  return new Response(obj.body, {
+    headers: {
+      ...cors,
+      'Content-Type': 'audio/ogg',
+      'Cache-Control': 'public, max-age=86400',
+    }
+  });
+}
+
+async function handleGetLiveState(request, env, cors) {
+  const cacheKey = new Request('https://cache.internal/live-state');
+  const cache = caches.default;
+  let response = await cache.match(cacheKey);
+  if (!response) {
+    const raw = await env.RADIO_KV.get('live_state');
+    const state = raw ? JSON.parse(raw) : { active: false };
+    response = new Response(JSON.stringify(state), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=1'
+      }
+    });
+    await cache.put(cacheKey, response.clone());
+  }
+  return response;
+}
+
+async function handlePostLiveState(request, env, cors) {
+  const data = await request.json();
+
+  if (data.action === 'start') {
+    // 상호 잠금: 파일 ON AIR 활성 시 거부
+    const ch5Raw = await env.RADIO_KV.get('ch5_state');
+    if (ch5Raw) {
+      const ch5 = JSON.parse(ch5Raw);
+      if (ch5.trackKey && !ch5.paused) {
+        return json({ error: 'file_active',
+          message: '파일 ON AIR 중에는 라이브를 시작할 수 없습니다. 먼저 종료하세요.' }, cors, 409);
+      }
+    }
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const sessionId = `${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}-${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
+
+    await env.RADIO_KV.put('live_state', JSON.stringify({
+      active: true, sessionId, latestChunk: -1,
+      chunkDuration: data.chunkDuration || 2.0,
+      startedAt: Date.now(), message: '', updatedAt: Date.now()
+    }));
+
+    await env.RADIO_KV.put('ch5_state', JSON.stringify({
+      mode: 'live', trackKey: null, trackName: '\uD83D\uDD34 라이브 방송',
+      paused: false, startEpoch: Date.now(), updatedAt: Date.now()
+    }));
+
+    // sessions.json에 추가
+    const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+    const sessions = sessionsObj ? JSON.parse(await sessionsObj.text()) : { sessions: [], totalSize: 0 };
+    sessions.sessions.push({
+      id: sessionId, startedAt: Date.now(), endedAt: null,
+      chunkCount: 0, chunkDuration: data.chunkDuration || 2.0,
+      totalSize: 0, title: data.title || ''
+    });
+    await env.RADIO_BUCKET.put('radio/live/sessions.json', JSON.stringify(sessions),
+      { httpMetadata: { contentType: 'application/json' } });
+
+    return json({ ok: true, sessionId }, cors);
+  }
+
+  if (data.action === 'stop') {
+    const stateRaw = await env.RADIO_KV.get('live_state');
+    const state = stateRaw ? JSON.parse(stateRaw) : {};
+    const sessionId = state.sessionId;
+
+    await env.RADIO_KV.put('live_state', JSON.stringify({ active: false }));
+    await env.RADIO_KV.put('ch5_state', JSON.stringify({
+      mode: 'file', trackKey: null, paused: true, currentTime: 0, updatedAt: Date.now()
+    }));
+
+    if (sessionId) {
+      const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+      if (sessionsObj) {
+        const sessions = JSON.parse(await sessionsObj.text());
+        const s = sessions.sessions.find(x => x.id === sessionId);
+        if (s) {
+          s.endedAt = Date.now();
+          s.totalSize = s.chunkCount * 32000;
+          sessions.totalSize = sessions.sessions.reduce((sum, x) => sum + x.totalSize, 0);
+        }
+        await env.RADIO_BUCKET.put('radio/live/sessions.json', JSON.stringify(sessions),
+          { httpMetadata: { contentType: 'application/json' } });
+      }
+    }
+    return json({ ok: true }, cors);
+  }
+
+  if (data.action === 'message') {
+    const stateRaw = await env.RADIO_KV.get('live_state');
+    if (stateRaw) {
+      const state = JSON.parse(stateRaw);
+      if (state.active) {
+        state.message = data.message || '';
+        state.updatedAt = Date.now();
+        await env.RADIO_KV.put('live_state', JSON.stringify(state));
+        return json({ ok: true }, cors);
+      }
+    }
+    return json({ error: 'not_active' }, cors, 400);
+  }
+
+  return json({ error: 'invalid action' }, cors, 400);
+}
+
+async function handleGetLiveConfig(env, cors) {
+  const configRaw = await env.RADIO_KV.get('live_config');
+  const config = configRaw ? JSON.parse(configRaw) : { storageLimit: 2147483648, chunkDuration: 2.0 };
+
+  const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+  let currentUsage = 0, sessionCount = 0, totalDurationSec = 0;
+  if (sessionsObj) {
+    const data = JSON.parse(await sessionsObj.text());
+    currentUsage = data.totalSize || 0;
+    sessionCount = data.sessions.length;
+    totalDurationSec = data.sessions.reduce((sum, s) => sum + s.chunkCount * s.chunkDuration, 0);
+  }
+
+  return json({
+    storageLimit: config.storageLimit,
+    storageLimitLabel: formatBytes(config.storageLimit),
+    chunkDuration: config.chunkDuration,
+    currentUsage, sessionCount, totalDurationSec
+  }, cors);
+}
+
+async function handlePostLiveConfig(request, env, cors) {
+  const data = await request.json();
+  const ALLOWED = [524288000, 1073741824, 2147483648, 3221225472, 5368709120];
+  if (!data.storageLimit || !ALLOWED.includes(data.storageLimit)) {
+    return json({ error: 'invalid limit' }, cors, 400);
+  }
+  const configRaw = await env.RADIO_KV.get('live_config');
+  const config = configRaw ? JSON.parse(configRaw) : { chunkDuration: 2.0 };
+  config.storageLimit = data.storageLimit;
+  await env.RADIO_KV.put('live_config', JSON.stringify(config));
+  await enforceStorageLimit(env, config.storageLimit);
+  return json({ ok: true }, cors);
+}
+
+async function handleGetSessions(env, cors) {
+  const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+  if (!sessionsObj) return json({ sessions: [] }, cors);
+  const data = JSON.parse(await sessionsObj.text());
+  const list = data.sessions
+    .filter(s => s.endedAt !== null)
+    .map(s => ({
+      id: s.id, startedAt: s.startedAt, endedAt: s.endedAt,
+      durationSec: s.chunkCount * s.chunkDuration,
+      chunkCount: s.chunkCount, chunkDuration: s.chunkDuration, title: s.title
+    }))
+    .reverse();
+  return json({ sessions: list }, cors);
+}
+
+async function handleDeleteSession(request, env, cors) {
+  const { sessionId } = await request.json();
+  const stateRaw = await env.RADIO_KV.get('live_state');
+  if (stateRaw) {
+    const state = JSON.parse(stateRaw);
+    if (state.active && state.sessionId === sessionId) {
+      return json({ error: 'cannot delete active session' }, cors, 409);
+    }
+  }
+  await deleteSessionChunks(env, sessionId);
+  const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+  if (sessionsObj) {
+    const data = JSON.parse(await sessionsObj.text());
+    data.sessions = data.sessions.filter(s => s.id !== sessionId);
+    data.totalSize = data.sessions.reduce((sum, s) => sum + s.totalSize, 0);
+    await env.RADIO_BUCKET.put('radio/live/sessions.json', JSON.stringify(data),
+      { httpMetadata: { contentType: 'application/json' } });
+  }
+  return json({ ok: true }, cors);
+}
+
+// ── 보존 정책 유틸리티 ─────────────────────────────────────────
+
+async function updateSessionAndEnforceLimit(env, sessionId, chunkIndex, addedSize, chunkDuration) {
+  const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+  let data = sessionsObj ? JSON.parse(await sessionsObj.text()) : { sessions: [], totalSize: 0 };
+
+  const session = data.sessions.find(s => s.id === sessionId);
+  if (session) {
+    session.chunkCount = chunkIndex + 1;
+    session.totalSize += addedSize;
+  }
+  data.totalSize = data.sessions.reduce((sum, s) => sum + s.totalSize, 0);
+
+  const configRaw = await env.RADIO_KV.get('live_config');
+  const limit = configRaw ? JSON.parse(configRaw).storageLimit : 2147483648;
+
+  while (data.totalSize > limit) {
+    const oldest = data.sessions.find(s => s.endedAt !== null && s.id !== sessionId);
+    if (!oldest) break;
+    await deleteSessionChunks(env, oldest.id);
+    data.sessions = data.sessions.filter(s => s.id !== oldest.id);
+    data.totalSize = data.sessions.reduce((sum, s) => sum + s.totalSize, 0);
+  }
+
+  await env.RADIO_BUCKET.put('radio/live/sessions.json', JSON.stringify(data),
+    { httpMetadata: { contentType: 'application/json' } });
+}
+
+async function enforceStorageLimit(env, limit) {
+  const sessionsObj = await env.RADIO_BUCKET.get('radio/live/sessions.json');
+  if (!sessionsObj) return;
+  const data = JSON.parse(await sessionsObj.text());
+  const liveRaw = await env.RADIO_KV.get('live_state');
+  const activeId = liveRaw ? JSON.parse(liveRaw).sessionId : null;
+  let changed = false;
+  while (data.totalSize > limit) {
+    const oldest = data.sessions.find(s => s.endedAt !== null && s.id !== activeId);
+    if (!oldest) break;
+    await deleteSessionChunks(env, oldest.id);
+    data.sessions = data.sessions.filter(s => s.id !== oldest.id);
+    data.totalSize = data.sessions.reduce((sum, s) => sum + s.totalSize, 0);
+    changed = true;
+  }
+  if (changed) {
+    await env.RADIO_BUCKET.put('radio/live/sessions.json', JSON.stringify(data),
+      { httpMetadata: { contentType: 'application/json' } });
+  }
+}
+
+async function deleteSessionChunks(env, sessionId) {
+  const prefix = `radio/live/${sessionId}/`;
+  let cursor = undefined;
+  do {
+    const listed = await env.RADIO_BUCKET.list({ prefix, limit: 1000, cursor });
+    for (const obj of listed.objects) await env.RADIO_BUCKET.delete(obj.key);
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+}
+
 // ── 극동방송 편성표 ─────────────────────────────────────────────
 async function getFebcSchedule() {
   if (febcCache.data && Date.now() - febcCache.ts < 60000) {
@@ -291,7 +630,6 @@ async function getKbsInfo() {
     return kbsCache.data;
   }
   try {
-    // ① 스트리밍 URL 획득
     const streamRes = await fetch(
       'https://cfpwwwapi.kbs.co.kr/api/v1/landing/live/channel_code/24',
       { headers: { Referer: 'https://onair.kbs.co.kr/' } }
@@ -301,7 +639,6 @@ async function getKbsInfo() {
     const streamUrl = radio?.service_url
       ?? 'https://1fm.gscdn.kbs.co.kr/1fm_192_2.m3u8';
 
-    // ② 현재 방송명 조회
     const schedRes = await fetch(
       'https://static.api.kbs.co.kr/mediafactory/v1/schedule/onair_now' +
       '?rtype=json&local_station_code=00&channel_code=24'
@@ -334,7 +671,7 @@ function corsHeaders(request) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-Chunk-Index, X-Chunk-Duration',
     'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
     'Access-Control-Max-Age': '86400',
   };
@@ -374,4 +711,9 @@ function guessChannel(key) {
   if (key.includes('channel-list2')) return 'list2';
   if (key.includes('channel-stream')) return 'stream';
   return 'stream';
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
 }
