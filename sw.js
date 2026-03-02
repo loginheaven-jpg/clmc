@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yebom-radio-v3';
+const CACHE_NAME = 'yebom-radio-v4';
 
 const NO_CACHE_PATTERNS = [
   /\.mp3$/, /\.m4a$/, /\.ogg$/, /\.wav$/, /\.flac$/,
@@ -6,6 +6,7 @@ const NO_CACHE_PATTERNS = [
   /\/api\//,
   /kbs\.co\.kr/, /febc\.net/,
   /cloudfront\.net/, /workers\.dev/,
+  /localhost/,
 ];
 
 self.addEventListener('install', event => {
