@@ -969,17 +969,18 @@ async function playHls(url, useProxy) {
   if (Hls.isSupported()) {
     const hlsConfig = { enableWorker:false, lowLatencyMode:true, backBufferLength:30, maxBufferLength:30 };
     if (useProxy) {
-      const hlsBaseUrl = url.substring(0, url.lastIndexOf('/') + 1);
-      hlsConfig.xhrSetup = (xhr, reqUrl) => {
-        let finalUrl = reqUrl;
-        // hls.js resolves relative URLs against the proxy URL (worker domain).
-        // Detect this and reconstruct against the real HLS base URL.
-        if (reqUrl.startsWith(WORKER_URL + '/api/') && !reqUrl.includes('/api/hls-proxy')) {
-          const filename = reqUrl.substring(reqUrl.lastIndexOf('/') + 1);
-          finalUrl = hlsBaseUrl + filename;
+      hlsConfig.pLoader = class {
+        constructor(config) { this.loader = new Hls.DefaultConfig.loader(config); }
+        destroy() { this.loader.destroy(); }
+        abort() { this.loader.abort(); }
+        load(ctx, config, callbacks) {
+          ctx.url = WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(ctx.url);
+          this.loader.load(ctx, config, callbacks);
         }
-        xhr.open('GET', WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(finalUrl), true);
+        get stats() { return this.loader.stats; }
+        get context() { return this.loader.context; }
       };
+      hlsConfig.fLoader = hlsConfig.pLoader;
     } else {
       hlsConfig.xhrSetup = xhr => { xhr.withCredentials = false; };
     }
@@ -1118,8 +1119,8 @@ async function enterChannel(channel) {
 
   const isR2 = channel === 3 || channel === 4;
   const isCh5 = channel === 5;
-  const isLive = channel === 1 || channel === 2;
-  const isPod = isR2 || isCh5;
+  const isLive = channel === 1 || channel === 2 || isCh5;
+  const isPod = isR2;
 
   // Progress area
   liveProgress.classList.toggle('visible', isLive);
@@ -1131,7 +1132,7 @@ async function enterChannel(channel) {
   // Controls
   btnPrev.style.display = isPod ? '' : 'none';
   btnNext.style.display = isPod ? '' : 'none';
-  const canRecord = isLive || isCh5;
+  const canRecord = isLive;
   btnRecord.classList.toggle('visible', canRecord);
   recordTimerRow.classList.remove('visible');
 
