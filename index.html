@@ -969,7 +969,17 @@ async function playHls(url, useProxy) {
   if (Hls.isSupported()) {
     const hlsConfig = { enableWorker:false, lowLatencyMode:true, backBufferLength:30, maxBufferLength:30 };
     if (useProxy) {
-      hlsConfig.xhrSetup = (xhr, reqUrl) => { xhr.open('GET', WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(reqUrl), true); };
+      const hlsBaseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+      hlsConfig.xhrSetup = (xhr, reqUrl) => {
+        let finalUrl = reqUrl;
+        // hls.js resolves relative URLs against the proxy URL (worker domain).
+        // Detect this and reconstruct against the real HLS base URL.
+        if (reqUrl.startsWith(WORKER_URL + '/api/') && !reqUrl.includes('/api/hls-proxy')) {
+          const filename = reqUrl.substring(reqUrl.lastIndexOf('/') + 1);
+          finalUrl = hlsBaseUrl + filename;
+        }
+        xhr.open('GET', WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(finalUrl), true);
+      };
     } else {
       hlsConfig.xhrSetup = xhr => { xhr.withCredentials = false; };
     }
