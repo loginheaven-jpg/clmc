@@ -885,13 +885,26 @@ function drawLampFlame(ctx, cx, baseY, t, on) {
   const fW = on ? 13 + Math.sin(t*2.3)*2 : 6;
   const fx = Math.sin(t*3.7)*1.2 + Math.sin(t*5.1)*0.5;
   if (on) {
-    const og = ctx.createRadialGradient(cx, baseY-fH*0.4, 2, cx, baseY-fH*0.3, 140);
-    og.addColorStop(0,'rgba(212,149,106,0.06)'); og.addColorStop(0.4,'rgba(200,165,94,0.03)'); og.addColorStop(1,'rgba(200,165,94,0)');
+    // 맥동하는 외곽 glow (반경+투명도 시간에 따라 변화)
+    const pulse = 0.5 + Math.sin(t*1.2)*0.5; // 0~1 맥동
+    const ogR = 120 + Math.sin(t*0.9)*25; // 반경 95~145 맥동
+    const ogA = 0.06 + pulse*0.06; // 투명도 0.06~0.12 맥동
+    const og = ctx.createRadialGradient(cx, baseY-fH*0.4, 2, cx, baseY-fH*0.3, ogR);
+    og.addColorStop(0,`rgba(255,180,80,${ogA})`); og.addColorStop(0.4,`rgba(212,149,106,${ogA*0.5})`); og.addColorStop(1,'rgba(200,165,94,0)');
     ctx.fillStyle = og; ctx.fillRect(0,0,280,280);
+    // 확산 파동 링 (2개, 위상 차이)
+    for (let w=0;w<2;w++) {
+      const wt = (t*0.6+w*Math.PI) % (Math.PI*2);
+      const wR = 20 + (wt/(Math.PI*2))*110; // 20→130 확산
+      const wA = 0.08 * (1 - wt/(Math.PI*2)); // 점점 투명해짐
+      ctx.beginPath(); ctx.arc(cx, baseY-fH*0.3, wR, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,200,100,${wA})`; ctx.lineWidth = 1.5; ctx.stroke();
+    }
   }
-  const ig = ctx.createRadialGradient(cx, baseY-fH*0.3, 3, cx, baseY-fH*0.2, 70);
-  ig.addColorStop(0, on ? 'rgba(255,200,100,0.15)' : 'rgba(255,200,100,0.04)');
-  ig.addColorStop(0.5, on ? 'rgba(255,180,80,0.06)' : 'rgba(255,180,80,0.01)');
+  const igR = on ? 60 + Math.sin(t*1.8)*15 : 70; // 재생 시 반경 맥동
+  const ig = ctx.createRadialGradient(cx, baseY-fH*0.3, 3, cx, baseY-fH*0.2, igR);
+  ig.addColorStop(0, on ? `rgba(255,200,100,${0.18 + Math.sin(t*1.5)*0.06})` : 'rgba(255,200,100,0.04)');
+  ig.addColorStop(0.5, on ? `rgba(255,180,80,${0.08 + Math.sin(t*2.0)*0.03})` : 'rgba(255,180,80,0.01)');
   ig.addColorStop(1,'rgba(255,180,80,0)');
   ctx.fillStyle = ig; ctx.fillRect(0,0,280,280);
   ctx.save(); ctx.translate(cx, baseY);
@@ -917,12 +930,16 @@ function drawLampFlame(ctx, cx, baseY, t, on) {
   ctx.fillStyle = cg; ctx.fill();
   ctx.restore();
   if (on) {
-    ctx.save(); ctx.globalAlpha = 0.025 + Math.sin(t*0.8)*0.008;
-    for (let i=0;i<8;i++) {
-      const a = (i/8)*Math.PI*2 + t*0.05, l = 80 + Math.sin(t*0.4+i*1.2)*15;
+    // 방사형 빛줄기 (12개, 더 밝고 빠른 회전, 개별 맥동)
+    ctx.save();
+    for (let i=0;i<12;i++) {
+      const a = (i/12)*Math.PI*2 + t*0.3; // 회전 속도 6배 증가
+      const lPulse = 0.5 + Math.sin(t*1.5+i*0.8)*0.5; // 개별 맥동
+      const l = 60 + lPulse*60; // 길이 60~120 맥동
+      const la = 0.04 + lPulse*0.05; // 개별 투명도 0.04~0.09
       ctx.beginPath(); ctx.moveTo(cx, baseY-fH*0.4);
       ctx.lineTo(cx+Math.cos(a)*l, baseY-fH*0.4+Math.sin(a)*l*0.6);
-      ctx.strokeStyle = `rgba(${LR},${LG},${LB},1)`; ctx.lineWidth = 0.5; ctx.stroke();
+      ctx.strokeStyle = `rgba(255,200,120,${la})`; ctx.lineWidth = 0.8 + lPulse*0.6; ctx.stroke();
     }
     ctx.restore();
   }
@@ -975,11 +992,11 @@ function drawLampBody(ctx, cx, flameBase, t, on) {
 function drawLampVerse(ctx, cx, on) {
   ctx.save();
   ctx.font = "italic 20px 'Georgia',serif"; ctx.textAlign = 'center';
-  ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.25)` : `rgba(${LR},${LG},${LB},0.1)`;
+  ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.55)` : `rgba(${LR},${LG},${LB},0.25)`;
   ctx.fillText('주의 말씀은 내 발에 등이요', cx, 235);
   ctx.fillText('내 길에 빛이니이다', cx, 256);
   ctx.font = "18px 'Georgia',serif";
-  ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.15)` : `rgba(${LR},${LG},${LB},0.06)`;
+  ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.35)` : `rgba(${LR},${LG},${LB},0.15)`;
   ctx.fillText('시편 119:105', cx, 274);
   ctx.restore();
 }
