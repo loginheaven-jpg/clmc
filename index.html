@@ -148,7 +148,7 @@ body{
 /* Progress */
 .progress-area{width:100%;position:relative;z-index:2;margin-top:12px;min-height:30px}
 .live-progress{display:none}.live-progress.visible{display:block}
-.live-bar-wrap{height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,0.06)}
+.live-bar-wrap{height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,0.02)}
 .live-bar-fill{width:100%;height:100%;border-radius:2px;background-size:200% 100%}
 .live-bar-info{display:flex;justify-content:space-between;align-items:center;font-size:10px;opacity:0.35;margin-top:5px}
 .live-dot{width:5px;height:5px;border-radius:50%;background:#e84040;display:inline-block;animation:recDot 1.5s ease infinite}
@@ -767,7 +767,7 @@ function applyChannelTheme(ch) {
   mainPlayBtn.style.color = def.bg1;
   mainPlayBtn.style.boxShadow = `0 6px 30px ${def.accent}30`;
 
-  liveBarFill.style.background = `linear-gradient(90deg, ${def.accent}60, ${def.accent}aa, ${def.accent}60)`;
+  liveBarFill.style.background = `linear-gradient(90deg, ${def.accent}15, ${def.accent}30, ${def.accent}15)`;
   seekFill.style.background = `linear-gradient(90deg, ${def.accent}aa, ${def.accent})`;
   seekThumb.style.background = def.accent;
   seekThumb.style.boxShadow = `0 0 8px ${def.accent}50`;
