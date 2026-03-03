@@ -67,7 +67,7 @@ c:\dev\radio\
 ### 채널 유형별 동작
 
 - **HLS 라이브 (CH1, CH2)**: hls.js로 실시간 스트리밍. 60초마다 프로그램명 갱신. Workers HLS 프록시로 CORS 우회.
-- **R2 개인선택 (CH3, CH4)**: Howler.js로 R2 음원 재생. 이어듣기(resume), 랜덤듣기, 이곡반복, 전곡반복, 속도 조절, 재생목록 지원. 5분마다 재생목록 자동 갱신. CH3은 LP 디스크 대신 Canvas 등잔 애니메이션 표시.
+- **R2 개인선택 (CH3, CH4)**: Howler.js로 R2 음원 재생. 이어듣기(resume), 랜덤듣기, 이곡반복, 전곡반복, 속도 조절, 재생목록 지원. 5분마다 재생목록 자동 갱신. CH3은 LP 디스크 대신 Canvas 등잔 애니메이션 표시 (멈춤 시 작은 불꽃 유지, 성경 구절 20px).
 - **R2 공유스트리밍 (CH5)**: 관리자가 ON AIR → KV에 상태 저장. 청취자는 10초마다 polling → 오프셋 계산 → 동기화 재생.
 
 ---
@@ -406,9 +406,9 @@ swipeStartX, discTranslateX
 - 우하단: "LIVE"
 
 **재생목록 프로그레스** (CH3, CH4, CH5):
-- 4px seek bar + 12px 원형 thumb (accent 컬러, 글로우 효과)
+- 8px seek bar + 24px 원형 thumb (accent 컬러, 글로우 효과, 터치 최적화)
 - `requestAnimationFrame` 으로 Howler.js의 `seek()`/`duration()` 실시간 갱신
-- 클릭 seek 지원 (`seekBar` click event → `currentHowl.seek()`)
+- 드래그 seek 지원 (mouse + touch drag, 재생 중/멈춤 모두 가능)
 - 시간 표시: `0:00 / 4:56` (Space Grotesk)
 
 ### 8.7 재생 컨트롤
@@ -789,6 +789,7 @@ git push origin main
 | 2026-03-03 | v2.2.2 | **라이브 방송 품질 대폭 개선**. Cache API로 매 청크마다 latestChunk 실시간 전파 (KV 10초→2초 지연). 클라이언트 순차 fetch로 청크 순서 보장. 버퍼 언더런 갭 제거. 투기적 +2청크 선행 fetch. 연속 에러 시 자동 연결 끊김 처리. 대형 파일 멀티파트 업로드(R2). 업로드 진행률 UI. |
 | 2026-03-03 | v2.2.3 | **재생목록 자동 갱신** (CH3-5, 5분 주기). 관리자 **녹음 설정 탭** (무음 감지 레벨/지속 시간 슬라이더, localStorage 저장). |
 | 2026-03-03 | v2.2.4 | **CH3 등잔 비주얼**. 말씀의 전당 채널에 LP 디스크 대신 Canvas 등잔 애니메이션 (미니멀 라인 스타일, 불꽃+성경 구절). 채널 전환 시 디스크↔등잔 자동 토글. |
+| 2026-03-03 | v2.2.5 | **Seek bar 드래그** (mouse+touch, 재생/멈춤 모두 가능). Thumb 24px 확대 (터치 최적화). CH3 등잔 멈춤 시 작은 불꽃 유지 (애니메이션 정지 버그 수정). 성경 구절 글씨 2배 확대 (10→20px). |
 
 ---
 

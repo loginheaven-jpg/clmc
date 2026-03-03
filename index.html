@@ -153,9 +153,9 @@ body{
 .live-bar-info{display:flex;justify-content:space-between;align-items:center;font-size:10px;opacity:0.35;margin-top:5px}
 .live-dot{width:5px;height:5px;border-radius:50%;background:#e84040;display:inline-block;animation:recDot 1.5s ease infinite}
 .playlist-progress{display:none}.playlist-progress.visible{display:block}
-.seek-bar{height:8px;background:rgba(255,255,255,0.06);border-radius:4px;position:relative;cursor:pointer}
+.seek-bar{height:8px;background:rgba(255,255,255,0.06);border-radius:4px;position:relative;cursor:pointer;touch-action:none}
 .seek-fill{height:100%;border-radius:4px;position:relative;width:0%;transition:width 0.1s linear}
-.seek-thumb{position:absolute;right:-6px;top:-5px;width:16px;height:16px;border-radius:50%}
+.seek-thumb{position:absolute;right:-12px;top:-8px;width:24px;height:24px;border-radius:50%}
 .seek-times{display:flex;justify-content:space-between;font-size:10px;opacity:0.3;margin-top:5px;font-variant-numeric:tabular-nums;font-family:'Space Grotesk',monospace}
 
 /* Play Controls */
@@ -873,7 +873,7 @@ function stopDiscRotation() {
   discLastTime = null;
 }
 function startVis() { if (currentChannel === 3) startLampAnim(); else startDiscRotation(); }
-function stopVis() { stopDiscRotation(); stopLampAnim(); }
+function stopVis() { stopDiscRotation(); if (currentChannel !== 3) stopLampAnim(); }
 
 // ── Lamp (CH3 등잔) ──
 let lampAnimId = null;
@@ -974,13 +974,13 @@ function drawLampBody(ctx, cx, flameBase, t, on) {
 
 function drawLampVerse(ctx, cx, on) {
   ctx.save();
-  ctx.font = "italic 10px 'Georgia',serif"; ctx.textAlign = 'center';
+  ctx.font = "italic 20px 'Georgia',serif"; ctx.textAlign = 'center';
   ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.25)` : `rgba(${LR},${LG},${LB},0.1)`;
-  ctx.fillText('주의 말씀은 내 발에 등이요', cx, 240);
-  ctx.fillText('내 길에 빛이니이다', cx, 254);
-  ctx.font = "9px 'Georgia',serif";
+  ctx.fillText('주의 말씀은 내 발에 등이요', cx, 235);
+  ctx.fillText('내 길에 빛이니이다', cx, 256);
+  ctx.font = "18px 'Georgia',serif";
   ctx.fillStyle = on ? `rgba(${LR},${LG},${LB},0.15)` : `rgba(${LR},${LG},${LB},0.06)`;
-  ctx.fillText('시편 119:105', cx, 268);
+  ctx.fillText('시편 119:105', cx, 274);
   ctx.restore();
 }
 
@@ -2277,10 +2277,21 @@ volSlider.addEventListener('input', e => {
   localStorage.setItem('radio-volume', v);
 });
 
-seekBar.addEventListener('click', e => {
+// Seek bar drag (mouse + touch)
+let seekDragging = false;
+function seekToX(clientX) {
   if (!currentHowl) return;
-  currentHowl.seek(currentHowl.duration() * (e.offsetX / seekBar.offsetWidth));
-});
+  const rect = seekBar.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  currentHowl.seek(currentHowl.duration() * ratio);
+  seekFill.style.width = (ratio * 100) + '%';
+}
+seekBar.addEventListener('mousedown', e => { seekDragging = true; seekToX(e.clientX); });
+document.addEventListener('mousemove', e => { if (seekDragging) seekToX(e.clientX); });
+document.addEventListener('mouseup', () => { seekDragging = false; });
+seekBar.addEventListener('touchstart', e => { seekDragging = true; seekToX(e.touches[0].clientX); e.preventDefault(); }, {passive: false});
+document.addEventListener('touchmove', e => { if (seekDragging) seekToX(e.touches[0].clientX); });
+document.addEventListener('touchend', () => { seekDragging = false; });
 
 speedWrap.addEventListener('click', e => {
   const btn = e.target.closest('.speed-btn');
