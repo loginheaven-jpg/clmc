@@ -257,12 +257,16 @@ body{
 .dropzone.dragover{border-color:var(--amber);background:rgba(245,158,11,0.05)}
 .dropzone-formats{font-size:0.72rem;color:var(--text-mute);margin-top:8px}
 .upload-queue{margin-bottom:16px}
-.upload-item{display:flex;align-items:center;gap:8px;padding:8px;margin-bottom:6px;background:var(--bg-surface);border-radius:10px}
-.upload-item input{flex:1;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid var(--border-glass);border-radius:8px;color:var(--text);font-size:0.82rem;outline:none}
+.upload-item{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px;margin-bottom:6px;background:var(--bg-surface);border-radius:10px}
+.upload-item input{flex:1;min-width:0;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid var(--border-glass);border-radius:8px;color:var(--text);font-size:0.82rem;outline:none}
 .upload-item input:focus{border-color:var(--amber)}
+.upload-file-size{font-size:0.7rem;color:var(--text-mute);white-space:nowrap}
 .upload-remove{background:none;border:none;color:var(--text-dim);font-size:1rem;cursor:pointer}
-.upload-progress{height:3px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;margin-top:4px}
+.upload-status-row{display:none;width:100%;align-items:center;gap:6px}
+.upload-progress{flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden}
 .upload-progress-fill{height:100%;background:var(--amber);width:0%;transition:width 0.3s}
+.upload-pct{font-size:0.72rem;color:var(--text-dim);min-width:36px;text-align:right}
+.upload-status-icon{font-size:0.85rem;min-width:18px;text-align:center}
 .upload-all-btn{width:100%;padding:10px;border-radius:12px;border:none;background:var(--amber);color:var(--bg-deep);font-size:0.9rem;font-weight:500;cursor:pointer;transition:opacity 0.2s}
 .upload-all-btn:hover{opacity:0.85}
 .upload-all-btn:disabled{opacity:0.4;cursor:not-allowed}
@@ -1768,24 +1772,47 @@ function renderUploadQueue() {
   $('uploadAllBtn').style.display = uploadQueue.length > 0 ? '' : 'none';
   uploadQueue.forEach((item, i) => {
     const div = document.createElement('div'); div.className = 'upload-item';
-    div.innerHTML = '<input type="text" value="'+item.name+'" data-idx="'+i+'"><button class="upload-remove" data-idx="'+i+'">✕</button><div class="upload-progress"><div class="upload-progress-fill" id="prog-'+i+'"></div></div>';
+    const sizeMB = (item.file.size / 1048576).toFixed(1);
+    div.innerHTML = '<input type="text" value="'+item.name+'" data-idx="'+i+'"><span class="upload-file-size">'+sizeMB+'MB</span><button class="upload-remove" data-idx="'+i+'">✕</button>'
+      +'<div class="upload-status-row" id="uprow-'+i+'"><span class="upload-status-icon" id="upicon-'+i+'"></span><div class="upload-progress"><div class="upload-progress-fill" id="prog-'+i+'"></div></div><span class="upload-pct" id="uppct-'+i+'">0%</span></div>';
     container.appendChild(div);
   });
   container.querySelectorAll('input').forEach(inp => { inp.addEventListener('input', e => { uploadQueue[parseInt(e.target.dataset.idx)].name = e.target.value; }); });
   container.querySelectorAll('.upload-remove').forEach(btn => { btn.addEventListener('click', () => { uploadQueue.splice(parseInt(btn.dataset.idx),1); renderUploadQueue(); }); });
 }
 async function uploadAll() {
-  $('uploadAllBtn').disabled = true;
-  for (let i = 0; i < uploadQueue.length; i++) {
+  const btn = $('uploadAllBtn');
+  const total = uploadQueue.length;
+  btn.disabled = true;
+  for (let i = 0; i < total; i++) {
+    btn.textContent = '업로드 중 (' + (i+1) + '/' + total + ')';
+    const row = document.getElementById('uprow-'+i);
+    const icon = document.getElementById('upicon-'+i);
+    const pct = document.getElementById('uppct-'+i);
+    if (row) row.style.display = 'flex';
+    if (icon) icon.textContent = '⏳';
     const item = uploadQueue[i]; const fd = new FormData(); fd.append('files', item.file); fd.append('channel', adminChannel); fd.append('name', item.name);
     try { await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest(); xhr.open('POST', WORKER_URL+'/api/upload'); xhr.setRequestHeader('Authorization','Bearer '+adminKey);
-      xhr.upload.onprogress = e => { if (e.lengthComputable) { const f = document.getElementById('prog-'+i); if (f) f.style.width = (e.loaded/e.total*100)+'%'; } };
+      xhr.upload.onprogress = e => { if (e.lengthComputable) {
+        const p = Math.round(e.loaded/e.total*100);
+        const f = document.getElementById('prog-'+i); if (f) f.style.width = p+'%';
+        if (pct) pct.textContent = p+'%';
+      }};
       xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(); };
       xhr.onerror = () => reject(); xhr.send(fd);
-    }); } catch { showToast('업로드 실패: '+item.name); }
+    });
+      if (icon) icon.textContent = '✅';
+      if (pct) pct.textContent = '완료';
+    } catch {
+      if (icon) icon.textContent = '❌';
+      if (pct) pct.textContent = '실패';
+      showToast('업로드 실패: '+item.name);
+    }
   }
-  uploadQueue = []; renderUploadQueue(); showToast('업로드 완료'); loadAdminTracks(adminChannel); $('uploadAllBtn').disabled = false;
+  btn.textContent = '모두 업로드'; btn.disabled = false;
+  showToast('업로드 완료 (' + total + '개)');
+  uploadQueue = []; renderUploadQueue(); loadAdminTracks(adminChannel);
 }
 async function saveAdminOrder() {
   try { await fetch(WORKER_URL+'/api/meta',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminKey},body:JSON.stringify({channel:adminChannel,tracks:adminTracks})}); showToast('순서 저장 완료'); } catch { showToast('순서 저장 실패'); }
