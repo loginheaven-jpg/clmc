@@ -445,7 +445,6 @@ body{
     <span class="divider">│</span>
     <button class="pill-btn" id="btnShuffle">🔀 랜덤듣기</button>
     <button class="pill-btn" id="btnRepeat">🔁 이곡반복</button>
-    <button class="pill-btn" id="btnRepeatAll">🔄 전곡반복</button>
     <button class="pill-btn" id="btnTrackList">📋 목록</button>
   </div>
 
@@ -558,7 +557,6 @@ let currentVolume = parseFloat(localStorage.getItem('radio-volume') ?? '0.8');
 let currentSpeed = 1;
 let shuffleOn = false;
 let repeatOn = false;
-let repeatAllOn = false;
 let shuffleOrder = [];
 
 let channelTracks = {};
@@ -717,7 +715,6 @@ const trackCounter = $('trackCounter');
 const speedWrap = $('speedWrap');
 const btnShuffle = $('btnShuffle');
 const btnRepeat = $('btnRepeat');
-const btnRepeatAll = $('btnRepeatAll');
 const btnTrackList = $('btnTrackList');
 const volSlider = $('volSlider');
 const volNum = $('volNum');
@@ -1109,13 +1106,7 @@ function playNext(channel) {
     if (shuffleOrder.length === 0) shuffleOrder = makeShuffleOrder(tracks.length);
     const pos = shuffleOrder.indexOf(currentTrackIdx);
     nextIdx = shuffleOrder[(pos + 1) % shuffleOrder.length];
-  } else {
-    nextIdx = currentTrackIdx + 1;
-    if (nextIdx >= tracks.length) {
-      if (repeatAllOn) { nextIdx = 0; }
-      else { showToast('마지막 곡입니다'); return; }
-    }
-  }
+  } else { nextIdx = (currentTrackIdx + 1) % tracks.length; }
   playTrack(channel, nextIdx, 0);
 }
 
@@ -1217,7 +1208,6 @@ async function enterChannel(channel) {
   playlistExtras.classList.toggle('visible', isPod);
   btnShuffle.style.display = isR2 ? '' : 'none';
   btnRepeat.style.display = isR2 ? '' : 'none';
-  btnRepeatAll.style.display = isR2 ? '' : 'none';
 
   seekFill.style.width = '0%';
   timePos.textContent = '0:00';
@@ -1995,12 +1985,6 @@ btnRepeat.addEventListener('click', () => {
   btnRepeat.classList.toggle('active', repeatOn);
   showToast(repeatOn ? '이곡반복 ON' : '이곡반복 OFF');
 });
-btnRepeatAll.addEventListener('click', () => {
-  repeatAllOn = !repeatAllOn;
-  btnRepeatAll.classList.toggle('active', repeatAllOn);
-  showToast(repeatAllOn ? '전곡반복 ON' : '전곡반복 OFF');
-});
-
 btnTrackList.addEventListener('click', openTrackPanel);
 $('trackPanelClose').addEventListener('click', closeTrackPanel);
 backdrop.addEventListener('click', closeTrackPanel);

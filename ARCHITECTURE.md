@@ -192,7 +192,7 @@ currentTrackName     // 현재 트랙 이름
 currentTrackIdx      // 현재 트랙 인덱스
 currentVolume        // 볼륨 (0.0~1.0)
 currentSpeed         // 재생 속도 (1, 1.1, 1.25, 1.5)
-shuffleOn, repeatOn, repeatAllOn  // 랜덤듣기/이곡반복/전곡반복 토글
+shuffleOn, repeatOn  // 랜덤듣기/이곡반복 토글 (전곡반복은 기본 동작)
 channelTracks        // { 3: [...], 4: [...], 5: [...] } 트랙 목록 캐시
 focusedIndex         // 현재 포커스된 채널 인덱스 (0~4)
 
@@ -295,7 +295,7 @@ swipeStartX, discTranslateX
 │          ⏺ 00:00 [WebM]              │  ← Rec Timer (녹음 시)
 ├────────────────────────────────────────┤
 │  7/48 │ 1× 1.1× 1.25× 1.5× │        │  ← Playlist Extras (CH3,4)
-│  🔀랜덤듣기 🔁이곡반복 🔄전곡반복 📋목록│     속도/랜덤/반복/목록
+│  🔀랜덤듣기  🔁이곡반복  📋목록        │     속도/랜덤/반복/목록
 ├────────────────────────────────────────┤
 │  🔊 [━━━━━━●━━━━] 80                  │  ← Bottom Panel (Glass)
 │  🕐 [10분] [30분] [1시간] [2시간]      │     볼륨 + 수면타이머
@@ -423,7 +423,7 @@ swipeStartX, discTranslateX
 
 - 트랙 카운터: `7 / 48`
 - 속도 버튼: **1×, 1.1×, 1.25×, 1.5×** (프로그램 설계 기준, 디자인 가이드와 다름)
-- 랜덤듣기 / 이곡반복 / 전곡반복 / 목록 토글 버튼
+- 랜덤듣기 / 이곡반복 / 목록 토글 버튼 (전곡반복은 기본 동작)
 - 속도/수면타이머 버튼은 채널 accent 컬러로 스타일링
 
 ---
@@ -456,7 +456,7 @@ playTrack(channel, trackIndex, startPosition)
 - **URL 인코딩**: `key.split('/').map(encodeURIComponent).join('/')` — 슬래시는 유지, 한글 파일명은 인코딩
 - **랜덤듣기**: Fisher-Yates 셔플 알고리즘 (`makeShuffleOrder()`)
 - **이곡반복**: `repeatOn = true` → `playNext()` 에서 같은 트랙 재생
-- **전곡반복**: `repeatAllOn = true` → 마지막 곡 끝나면 첫 곡으로 순환. OFF면 마지막 곡에서 정지
+- **전곡반복**: 기본 동작 — 마지막 곡 끝나면 항상 첫 곡으로 순환
 
 ### 9.3 이어듣기 (CH3, CH4)
 
@@ -679,7 +679,7 @@ git push origin main
 - 이전 카드 캐러셀 UI → 바이닐 디스크 중심 UI로 전면 교체
 - 디자인 참조: `UI-GUIDE.md` + `radio-vinyl.jsx` (React 프로토타입)
 - **속도 버튼**은 디자인 가이드(0.75×/1×/1.25×/1.5×)와 달리 프로그램 설계 기준 **1×/1.1×/1.25×/1.5×** 유지
-- **반복 버튼**: 이곡반복 + 전곡반복 2개로 분리. 전곡반복 OFF 시 마지막 곡에서 정지
+- **반복 버튼**: 이곡반복 토글만 제공, 전곡반복은 기본 동작
 - **배경**: 채널별 배경 + 시간대별 미세 오버레이 (둘 다 적용)
 - **배경 효과**: 기존 bg-orbs (floating orb 3개) → ambient glow + floating particles로 교체
 
