@@ -9,6 +9,8 @@ import threading
 import time
 import json
 import os
+import ctypes
+import sys
 
 import config
 from audio_engine import AudioEngine, list_audio_devices
@@ -755,7 +757,23 @@ class HostApp:
         self.root.destroy()
 
 
+def ensure_single_instance():
+    """이미 실행 중이면 기존 창을 포그라운드로 올리고 종료"""
+    mutex_name = "Global\\BomSoriHost_SingleInstance"
+    kernel32 = ctypes.windll.kernel32
+    mutex = kernel32.CreateMutexW(None, False, mutex_name)
+    if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, config.WINDOW_TITLE)
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+        sys.exit(0)
+    return mutex
+
+
 def main():
+    mutex = ensure_single_instance()
     root = tk.Tk()
     HostApp(root)
     root.mainloop()
