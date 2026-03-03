@@ -148,14 +148,14 @@ body{
 /* Progress */
 .progress-area{width:100%;position:relative;z-index:2;margin-top:12px;min-height:30px}
 .live-progress{display:none}.live-progress.visible{display:block}
-.live-bar-wrap{height:4px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,0.06)}
+.live-bar-wrap{height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,0.06)}
 .live-bar-fill{width:100%;height:100%;border-radius:2px;background-size:200% 100%}
 .live-bar-info{display:flex;justify-content:space-between;align-items:center;font-size:10px;opacity:0.35;margin-top:5px}
 .live-dot{width:5px;height:5px;border-radius:50%;background:#e84040;display:inline-block;animation:recDot 1.5s ease infinite}
 .playlist-progress{display:none}.playlist-progress.visible{display:block}
-.seek-bar{height:4px;background:rgba(255,255,255,0.06);border-radius:2px;position:relative;cursor:pointer}
-.seek-fill{height:100%;border-radius:2px;position:relative;width:0%;transition:width 0.1s linear}
-.seek-thumb{position:absolute;right:-5px;top:-4px;width:12px;height:12px;border-radius:50%}
+.seek-bar{height:8px;background:rgba(255,255,255,0.06);border-radius:4px;position:relative;cursor:pointer}
+.seek-fill{height:100%;border-radius:4px;position:relative;width:0%;transition:width 0.1s linear}
+.seek-thumb{position:absolute;right:-6px;top:-5px;width:16px;height:16px;border-radius:50%}
 .seek-times{display:flex;justify-content:space-between;font-size:10px;opacity:0.3;margin-top:5px;font-variant-numeric:tabular-nums;font-family:'Space Grotesk',monospace}
 
 /* Play Controls */
@@ -447,9 +447,9 @@ body{
       <button class="speed-btn" data-speed="1.5">1.5×</button>
     </div>
     <span class="divider">│</span>
-    <button class="pill-btn" id="btnShuffle">🔀 랜덤듣기</button>
-    <button class="pill-btn" id="btnRepeat">🔁 이곡반복</button>
     <button class="pill-btn" id="btnTrackList">📋 목록</button>
+    <button class="pill-btn" id="btnRepeat">🔁 이곡반복</button>
+    <button class="pill-btn" id="btnShuffle">🔀 랜덤듣기</button>
   </div>
 
   <!-- Bottom Panel -->
