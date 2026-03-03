@@ -1,6 +1,6 @@
 # 예봄라디오 2.0 — 아키텍처 문서
 
-> **버전**: 2026-03-02 v2.1 (Warm Vinyl UI)
+> **버전**: 2026-03-03 v2.2.1 (호스트 앱 통합)
 > **프로젝트 경로**: `c:\dev\radio\yebomradio`
 > **GitHub**: https://github.com/loginheaven-jpg/radio
 > **Pages URL**: https://radio-axi.pages.dev
@@ -29,17 +29,27 @@
 c:\dev\radio\
 ├── UI-GUIDE.md               ← Warm Vinyl UI 디자인 가이드 (한국어)
 ├── radio-vinyl.jsx            ← React 디자인 프로토타입 (참조용, 실제 사용 안함)
+├── LIVE_BROADCAST_DESIGN.md   ← 라이브 방송 시스템 설계 문서
 └── yebomradio/                ← 메인 앱 디렉토리 (git root)
-    ├── index.html             ← 전체 프론트엔드 (CSS + HTML + JS 인라인, ~1654줄)
-    ├── worker.js              ← Cloudflare Workers API 서버 (~378줄)
+    ├── index.html             ← 전체 프론트엔드 (CSS + HTML + JS 인라인, ~2000줄)
+    ├── worker.js              ← Cloudflare Workers API 서버 (~560줄)
     ├── wrangler.toml          ← Workers 설정 (R2, KV 바인딩)
-    ├── sw.js                  ← Service Worker (캐시 전략, 자동 업데이트)
+    ├── sw.js                  ← Service Worker (캐시 v6, 자동 업데이트)
     ├── manifest.json          ← PWA 매니페스트
     ├── icon-192.png           ← PWA 아이콘 192×192
     ├── icon-512.png           ← PWA 아이콘 512×512
     ├── ARCHITECTURE.md        ← 이 문서
     ├── DESIGN_GUIDE.md        ← 원본 설계 명세 (초기 버전)
-    └── DESIGN_GUIDE1.md       ← 대안 설계 명세
+    ├── DESIGN_GUIDE1.md       ← 대안 설계 명세
+    └── host/                  ← Python 호스트 앱 (봄소리 라이브+파일 방송 관리)
+        ├── host.py            ← tkinter GUI (탭: 라이브 방송 + 파일 방송)
+        ├── config.py          ← 설정 상수 (오디오, 네트워크, GUI)
+        ├── audio_engine.py    ← FFmpeg DirectShow 오디오 캡처/믹싱
+        ├── uploader.py        ← Workers API 라이브 청크 업로드 (큐 기반)
+        ├── api_client.py      ← Workers API 파일 방송 관리 (트랙/CH5 상태)
+        ├── requirements.txt   ← Python 의존성 (requests)
+        ├── build.bat          ← PyInstaller 빌드 스크립트
+        └── settings.json      ← 사용자 설정 (gitignore, 로컬 전용)
 ```
 
 ---
@@ -768,3 +778,81 @@ git push origin main
 | 2026-03-02 | v2.1.1 | HLS 프록시 상대 URL 해석 수정 (pLoader/fLoader + response.url 복원). CH5 라이브 채널 UI 수정. SW 캐시 v4. |
 | 2026-03-02 | v2.1.2 | CH3/CH4 간헐적 무음 수정 (AudioContext lazy, Howler crossOrigin 패치). |
 | 2026-03-02 | v2.2 | **라이브 방송 시스템**. Workers API 8개 엔드포인트 (청크 업로드/다운로드, 상태, 보존정책, 세션관리). 파일 ON AIR ↔ 라이브 상호잠금. AudioContext 기반 청크 플레이어 + 다시듣기. 관리자 패널 (라이브 상태/보존설정/세션삭제). 트랙 목록 지난 방송 섹션. Python 호스트 앱 (FFmpeg 믹싱 + tkinter GUI). |
+| 2026-03-03 | v2.2.1 | **호스트 앱 파일 방송 통합**. 라이브 전용 → 탭 UI(라이브+파일). api_client.py 신규 (트랙 관리/CH5 상태/업로드). 파일 선택·업로드·트랙 목록·ON AIR·일시정지·종료·순서 변경. 라이브↔파일 상호잠금(UI+409). host/ 폴더를 git 저장소 안으로 이동. |
+
+---
+
+## 17. Python 호스트 앱 (`host/`)
+
+### 17.1 개요
+
+봄소리 방송 관리 데스크톱 앱. **두 가지 모드**를 지원한다:
+- **라이브 방송**: 마이크 + PC 사운드를 FFmpeg로 캡처 → Opus/OGG 2초 청크 → Workers API 업로드
+- **파일 방송**: 오디오 파일 업로드, 트랙 관리, ON AIR/일시정지/종료 (웹 관리자 패널과 동일 기능)
+
+두 모드는 **상호 배타적** — Workers API가 409 충돌 응답으로 강제하며, 호스트 앱 UI에서도 선제 차단한다.
+
+### 17.2 모듈 구조
+
+| 파일 | 역할 |
+|------|------|
+| `host.py` | tkinter GUI 메인 (탭 UI, 이벤트 핸들링) |
+| `config.py` | 상수 (CHUNK_DURATION=2.0, SAMPLE_RATE=48000, BITRATE=128k 등) |
+| `audio_engine.py` | FFmpeg DirectShow 캡처 → 청크 분할 → 콜백 |
+| `uploader.py` | 라이브 청크 큐 기반 업로드 (start/stop/upload_chunk) |
+| `api_client.py` | 파일 방송 API (트랙 CRUD, CH5 상태, 잠금 확인) |
+
+### 17.3 GUI 레이아웃
+
+```
+Window (500×660, 다크 테마 #1a1726)
+├── 헤더: "봄소리 호스트"
+├── 서버 설정: Workers URL + Admin Key
+├── ttk.Notebook (탭)
+│   ├── "라이브 방송" 탭
+│   │   ├── 방송 제목, 오디오 장치 (마이크/PC사운드)
+│   │   ├── 볼륨 슬라이더, 시작/종료 버튼
+│   │   └── 상태, 타이머, 청크 카운터
+│   └── "파일 방송" 탭
+│       ├── 파일 선택 + 업로드 (진행바)
+│       ├── 트랙 목록 (Treeview) + ▲▼ ON AIR 삭제 버튼
+│       ├── ON AIR 상태 + 일시정지/종료 제어
+│       └── 잠금 경고 (라이브 방송 중일 때)
+```
+
+### 17.4 API 사용
+
+| 모듈 | 엔드포인트 | 용도 |
+|------|-----------|------|
+| uploader.py | `POST /api/live/state` | 라이브 시작/종료 |
+| uploader.py | `POST /api/live/chunk` | 오디오 청크 업로드 |
+| api_client.py | `GET /api/tracks?channel=stream` | CH5 트랙 목록 |
+| api_client.py | `POST /api/upload` | 파일 업로드 (multipart) |
+| api_client.py | `POST /api/delete` | 트랙 삭제 |
+| api_client.py | `POST /api/meta` | 트랙 순서 저장 |
+| api_client.py | `GET/POST /api/ch5/state` | ON AIR 상태 조회/변경 |
+| api_client.py | `GET /api/live/state` | 라이브 잠금 확인 |
+
+### 17.5 환경 요구사항
+
+- Python 3.10+
+- FFmpeg (PATH에 등록 또는 절대경로)
+- PC 사운드 캡처: Windows 스테레오 믹스 활성화 필요
+- 의존성: `pip install requests`
+
+### 17.6 실행
+
+```bash
+cd yebomradio/host
+pip install -r requirements.txt
+python host.py
+```
+
+### 17.7 빌드 (exe 배포)
+
+```bash
+cd yebomradio/host
+pip install pyinstaller
+build.bat
+# → dist/봄소리호스트.exe
+```
