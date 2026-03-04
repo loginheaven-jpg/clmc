@@ -352,6 +352,11 @@ export default {
         return new Response(resp.body, { status: resp.status, headers: proxyHeaders });
       }
 
+      // ── 곡명 인식 (ACRCloud) ─────────────────────────────────
+      if (path === '/api/identify' && method === 'POST') {
+        return handleIdentify(request, env, cors);
+      }
+
       return new Response('Not Found', { status: 404, headers: cors });
 
     } catch (e) {
@@ -685,6 +690,106 @@ async function getFebcSchedule() {
   } catch {
     return { programTitle: null };
   }
+}
+
+// ── 곡명 인식 (ACRCloud) ────────────────────────────────────────
+async function handleIdentify(request, env, cors) {
+  try {
+    const { channel } = await request.json();
+    if (channel !== 1 && channel !== 2) {
+      return json({ error: '라이브 채널(1, 2)만 지원합니다' }, cors, 400);
+    }
+
+    // 1) m3u8 URL 결정
+    let m3u8Url;
+    if (channel === 1) {
+      try { m3u8Url = (await getKbsInfo()).streamUrl; } catch {}
+      if (!m3u8Url) m3u8Url = 'https://1fm.gscdn.kbs.co.kr/1fm_192_2.m3u8';
+    } else {
+      m3u8Url = 'https://mlive2.febc.net/live_m4a/audio.m3u8';
+    }
+
+    // 2) m3u8 fetch + 세그먼트 URL 추출 (다단계 처리)
+    const ua = { 'User-Agent': 'Mozilla/5.0 (compatible; YebomRadio/2.0)' };
+    let segUrl = await resolveSegmentUrl(m3u8Url, ua);
+    if (!segUrl) return json({ found: false, message: '세그먼트를 찾을 수 없습니다' }, cors);
+
+    // 3) 세그먼트 fetch
+    const segRes = await fetch(segUrl, { headers: ua });
+    const segBuf = await segRes.arrayBuffer();
+    if (segBuf.byteLength < 1000) return json({ found: false, message: '오디오 데이터가 너무 짧습니다' }, cors);
+
+    // 4) ACRCloud API 호출
+    const result = await callACRCloud(env, segBuf);
+    return json(result, cors);
+  } catch (e) {
+    return json({ found: false, message: '인식 실패: ' + e.message }, cors, 500);
+  }
+}
+
+async function resolveSegmentUrl(m3u8Url, headers) {
+  const res = await fetch(m3u8Url, { headers });
+  const text = await res.text();
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  if (lines.length === 0) return null;
+
+  // variant 플레이리스트면 첫 번째 variant의 세그먼트 URL 재귀 추출
+  const first = lines[0];
+  if (first.endsWith('.m3u8') || first.includes('.m3u8?')) {
+    const variantUrl = toAbsoluteUrl(first, m3u8Url);
+    return resolveSegmentUrl(variantUrl, headers);
+  }
+
+  // 마지막 세그먼트 반환
+  return toAbsoluteUrl(lines[lines.length - 1], m3u8Url);
+}
+
+function toAbsoluteUrl(relative, baseUrl) {
+  if (relative.startsWith('http')) return relative;
+  const base = new URL(baseUrl);
+  if (relative.startsWith('/')) return base.origin + relative;
+  const parts = base.pathname.split('/'); parts.pop();
+  return base.origin + parts.join('/') + '/' + relative;
+}
+
+async function callACRCloud(env, audioBuffer) {
+  const host = env.ACRCLOUD_HOST;
+  const accessKey = env.ACRCLOUD_KEY;
+  const accessSecret = env.ACRCLOUD_SECRET;
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const stringToSign = ['POST', '/v1/identify', accessKey, 'audio', '1', timestamp].join('\n');
+
+  // HMAC-SHA1 서명
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(accessSecret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(stringToSign));
+  const signature = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+
+  // multipart/form-data
+  const fd = new FormData();
+  fd.append('sample', new Blob([audioBuffer]), 'sample.ts');
+  fd.append('access_key', accessKey);
+  fd.append('data_type', 'audio');
+  fd.append('signature_version', '1');
+  fd.append('signature', signature);
+  fd.append('timestamp', timestamp);
+  fd.append('sample_bytes', audioBuffer.byteLength.toString());
+
+  const res = await fetch(`https://${host}/v1/identify`, { method: 'POST', body: fd });
+  const data = await res.json();
+
+  if (data.status?.code === 0 && data.metadata?.music?.length > 0) {
+    const m = data.metadata.music[0];
+    return {
+      found: true,
+      title: m.title || '',
+      artist: m.artists?.map(a => a.name).join(', ') || '',
+      album: m.album?.name || '',
+      composers: m.external_metadata?.works?.map(w => w.composers)?.flat()?.map(c => c.name)?.join(', ') || '',
+      score: m.score || 0,
+    };
+  }
+  return { found: false, message: data.status?.msg || '인식할 수 없습니다' };
 }
 
 // ── KBS 클래식 FM ───────────────────────────────────────────────

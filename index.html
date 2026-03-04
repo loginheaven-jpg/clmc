@@ -176,6 +176,25 @@ body{
 .rec-btn.visible{display:flex}
 .rec-btn.recording{background:rgba(232,64,64,0.25);border-color:rgba(232,64,64,0.5)}
 .rec-dot{width:8px;height:8px;border-radius:50%;background:#e84040;display:inline-block;animation:recDot 1.2s ease infinite}
+.identify-btn{
+  background:rgba(106,180,220,0.1);border:1px solid rgba(106,180,220,0.2);
+  border-radius:12px;padding:8px 16px;color:#80c0e8;font-size:12px;
+  cursor:pointer;display:none;align-items:center;gap:6px;transition:all 0.2s;
+}
+.identify-btn.visible{display:flex}
+.identify-btn.loading{opacity:0.5;pointer-events:none}
+.identify-btn:active{transform:scale(0.95)}
+.identify-result{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  background:rgba(20,18,36,0.95);backdrop-filter:blur(12px);
+  border:1px solid rgba(106,180,220,0.3);border-radius:16px;
+  padding:16px 24px;text-align:center;z-index:100;
+  animation:fadeInUp 0.3s ease;min-width:240px;max-width:340px;
+}
+.identify-title{font-size:15px;font-weight:700;color:#ece4d8;margin-bottom:4px}
+.identify-artist{font-size:13px;color:#a0c0e0;margin-bottom:2px}
+.identify-album{font-size:11px;color:#9a9494}
+.identify-meta{font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px}
 
 /* Playlist Extras */
 .playlist-extras{display:none;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;position:relative;z-index:2}
@@ -428,6 +447,9 @@ body{
     </button>
     <button class="ctrl-btn" id="btnNext" style="display:none" title="다음">
       <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 4 L13 10 L6 16" stroke="#ece4d8" stroke-width="2" fill="none" stroke-linecap="round"/><line x1="14" y1="4" x2="14" y2="16" stroke="#ece4d8" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button class="identify-btn" id="btnIdentify">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M4 4v8M12 4v8M1 6v4M15 6v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> 곡명
     </button>
   </div>
 
@@ -739,6 +761,7 @@ const playIcon = $('playIcon');
 const btnPrev = $('btnPrev');
 const btnNext = $('btnNext');
 const btnRecord = $('btnRecord');
+const btnIdentify = $('btnIdentify');
 const btnRecordFormat = $('btnRecordFormat');
 const recordTimerRow = $('recordTimerRow');
 const recordTimerEl = $('recordTimer');
@@ -1407,6 +1430,8 @@ async function enterChannel(channel) {
   btnNext.style.display = isPod ? '' : 'none';
   const canRecord = isLive;
   btnRecord.classList.toggle('visible', canRecord);
+  const canIdentify = channel === 1 || channel === 2;
+  btnIdentify.classList.toggle('visible', canIdentify);
   recordTimerRow.classList.remove('visible');
 
   playlistExtras.classList.toggle('visible', isPod);
@@ -2281,6 +2306,54 @@ mainPlayBtn.addEventListener('click', handlePlayPause);
 btnRecord.addEventListener('click', () => { if (isRecording) stopRecording(); else startRecording(); });
 btnRecordFormat.addEventListener('click', toggleRecordFormat);
 updateRecordFormatBtn();
+
+// ── 곡명 인식 ──
+btnIdentify.addEventListener('click', async () => {
+  if (btnIdentify.classList.contains('loading')) return;
+  if (!isPlaying) { showToast('먼저 재생을 시작해주세요'); return; }
+  if (currentChannel !== 1 && currentChannel !== 2) return;
+
+  btnIdentify.classList.add('loading');
+  const origHTML = btnIdentify.innerHTML;
+  btnIdentify.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M4 4v8M12 4v8M1 6v4M15 6v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> 인식 중…';
+
+  try {
+    const res = await fetch(WORKER_URL + '/api/identify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: currentChannel }),
+    });
+    const data = await res.json();
+
+    if (data.found) {
+      showIdentifyResult(data);
+    } else {
+      showToast(data.message || '곡을 인식할 수 없습니다');
+    }
+  } catch (e) {
+    showToast('곡명 인식 실패');
+  } finally {
+    btnIdentify.classList.remove('loading');
+    btnIdentify.innerHTML = origHTML;
+  }
+});
+
+function showIdentifyResult(data) {
+  const existing = document.querySelector('.identify-result');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.className = 'identify-result';
+  let html = `<div class="identify-title">${data.title}</div>`;
+  if (data.artist) html += `<div class="identify-artist">${data.artist}</div>`;
+  if (data.composers) html += `<div class="identify-artist">작곡: ${data.composers}</div>`;
+  if (data.album) html += `<div class="identify-album">${data.album}</div>`;
+  if (data.score) html += `<div class="identify-meta">정확도 ${data.score}%</div>`;
+  el.innerHTML = html;
+  el.addEventListener('click', () => el.remove());
+  document.getElementById('app').appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 10000);
+}
 
 volSlider.value = currentVolume;
 volNum.textContent = Math.round(currentVolume * 100);

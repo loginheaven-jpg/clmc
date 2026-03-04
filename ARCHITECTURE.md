@@ -101,6 +101,7 @@ c:\dev\radio\
 | **POST** | **`/api/live/config`** | **보존 한도 변경** | **Admin** |
 | **GET** | **`/api/live/sessions`** | **저장된 방송 세션 목록** | 없음 |
 | **POST** | **`/api/live/sessions/delete`** | **세션 수동 삭제** | **Admin** |
+| POST | `/api/identify` | 곡명 인식 (HLS 세그먼트 → ACRCloud 핑거프린팅) | 없음 |
 
 ### HLS 프록시 화이트리스트
 `gscdn.kbs.co.kr`, `kbs.co.kr`, `febc.net`, `mlive2.febc.net`
@@ -790,6 +791,7 @@ git push origin main
 | 2026-03-03 | v2.2.3 | **재생목록 자동 갱신** (CH3-5, 5분 주기). 관리자 **녹음 설정 탭** (무음 감지 레벨/지속 시간 슬라이더, localStorage 저장). |
 | 2026-03-03 | v2.2.4 | **CH3 등잔 비주얼**. 말씀의 전당 채널에 LP 디스크 대신 Canvas 등잔 애니메이션 (미니멀 라인 스타일, 불꽃+성경 구절). 채널 전환 시 디스크↔등잔 자동 토글. |
 | 2026-03-03 | v2.2.5 | **Seek bar 드래그** (mouse+touch, 재생/멈춤 모두 가능). Thumb 24px 확대 (터치 최적화). CH3 등잔 멈춤 시 작은 불꽃 유지 (애니메이션 정지 버그 수정). 성경 구절 글씨 2배 확대 (10→20px). |
+| 2026-03-04 | v2.3.0 | **곡명 인식 (ACRCloud)**. CH1/CH2 라이브 채널에서 "곡명" 버튼으로 현재 재생 곡 식별. Workers가 HLS 세그먼트 fetch → ACRCloud Identification API. 결과 카드 UI (제목/아티스트/작곡가/앨범/정확도). |
 
 ---
 
