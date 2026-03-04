@@ -191,10 +191,14 @@ body{
   padding:16px 24px;text-align:center;z-index:100;
   animation:fadeInUp 0.3s ease;min-width:240px;max-width:340px;
 }
+.identify-close{position:absolute;top:6px;right:10px;background:none;border:none;color:rgba(255,255,255,0.35);font-size:18px;cursor:pointer;padding:2px 6px;line-height:1}
+.identify-close:hover{color:rgba(255,255,255,0.7)}
 .identify-title{font-size:15px;font-weight:700;color:#ece4d8;margin-bottom:4px}
 .identify-artist{font-size:13px;color:#a0c0e0;margin-bottom:2px}
 .identify-album{font-size:11px;color:#9a9494}
 .identify-meta{font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px}
+.identify-fail{font-size:13px;color:#c0b8a8;line-height:1.6}
+.identify-fail-icon{font-size:28px;margin-bottom:6px}
 
 /* Playlist Extras */
 .playlist-extras{display:none;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;position:relative;z-index:2}
@@ -2330,31 +2334,45 @@ btnIdentify.addEventListener('click', async () => {
     if (data.found) {
       showIdentifyResult(data);
     } else {
-      showToast(data.message || '곡을 인식할 수 없습니다');
+      showIdentifyFail();
     }
   } catch (e) {
-    showToast('곡명 인식 실패');
+    showIdentifyFail();
   } finally {
     btnIdentify.classList.remove('loading');
     btnIdentify.innerHTML = origHTML;
   }
 });
 
-function showIdentifyResult(data) {
+function showIdentifyPopup(html, autoDismiss = 15000) {
   const existing = document.querySelector('.identify-result');
   if (existing) existing.remove();
-
   const el = document.createElement('div');
   el.className = 'identify-result';
+  el.innerHTML = `<button class="identify-close" onclick="this.parentNode.remove()">&times;</button>${html}`;
+  document.getElementById('app').appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, autoDismiss);
+}
+
+function showIdentifyResult(data) {
   let html = `<div class="identify-title">${data.title}</div>`;
   if (data.artist) html += `<div class="identify-artist">${data.artist}</div>`;
   if (data.composers) html += `<div class="identify-artist">작곡: ${data.composers}</div>`;
   if (data.album) html += `<div class="identify-album">${data.album}</div>`;
   if (data.score) html += `<div class="identify-meta">정확도 ${data.score}%</div>`;
-  el.innerHTML = html;
-  el.addEventListener('click', () => el.remove());
-  document.getElementById('app').appendChild(el);
-  setTimeout(() => { if (el.parentNode) el.remove(); }, 10000);
+  showIdentifyPopup(html);
+}
+
+const identifyFailMsgs = [
+  { icon: '🕵️', text: '이 곡, 정체를 숨기고 싶은가봐요' },
+  { icon: '🌸', text: '이름모를 들꽃처럼 즐기시면...' },
+  { icon: '🌊', text: '음악은 흐르고, 제목도 멀리 흘러가고...' },
+  { icon: '🤔', text: '저도 궁금하네요' },
+  { icon: '📡', text: '전파는 잡혔고, 제목은 안 잡히고...' },
+];
+function showIdentifyFail() {
+  const m = identifyFailMsgs[Math.floor(Math.random() * identifyFailMsgs.length)];
+  showIdentifyPopup(`<div class="identify-fail-icon">${m.icon}</div><div class="identify-fail">${m.text}</div>`);
 }
 
 volSlider.value = currentVolume;
