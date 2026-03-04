@@ -19,6 +19,7 @@ const DIR_MAP = {
 // ── 캐시 (Workers 인스턴스 수명 동안 유지) ─────────────────────
 let febcCache = { data: null, ts: 0 };
 let kbsCache  = { data: null, ts: 0 };
+let rscCache  = { data: null, ts: 0 };
 
 export default {
   async fetch(request, env, ctx) {
@@ -328,6 +329,12 @@ export default {
         return json(data, cors);
       }
 
+      // ── Radio Swiss Classic Now Playing ──────────────────────────
+      if (path === '/api/rsc-nowplaying' && method === 'GET') {
+        const data = await getRscNowPlaying();
+        return json(data, cors);
+      }
+
       // ── HLS 프록시 (CORS 우회) ─────────────────────────────────
       if (path === '/api/hls-proxy' && method === 'GET') {
         const target = url.searchParams.get('url');
@@ -336,7 +343,7 @@ export default {
         let parsed;
         try { parsed = new URL(target); } catch { return new Response('Invalid url', { status: 400, headers: cors }); }
 
-        const allowed = ['gscdn.kbs.co.kr', 'kbs.co.kr', 'febc.net', 'mlive2.febc.net'];
+        const allowed = ['gscdn.kbs.co.kr', 'kbs.co.kr', 'febc.net', 'mlive2.febc.net', 'stream.srg-ssr.ch'];
         if (!allowed.some(d => parsed.hostname.endsWith(d))) {
           return new Response('Domain not allowed', { status: 403, headers: cors });
         }
@@ -689,6 +696,86 @@ async function getFebcSchedule() {
     return data;
   } catch {
     return { programTitle: null };
+  }
+}
+
+// ── Radio Swiss Classic Now Playing ─────────────────────────────
+async function getRscNowPlaying() {
+  if (rscCache.data && Date.now() - rscCache.ts < 30000) return rscCache.data;
+  try {
+    const res = await fetch('https://www.radioswissclassic.ch/de/musikprogramm', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    const html = await res.text();
+
+    // __NUXT__ IIFE 파싱: (function(a,b,...){return {...}}("v1","v2",...))
+    // 1) 파라미터 이름 추출
+    const paramMatch = html.match(/window\.__NUXT__=\(function\(([^)]+)\)/);
+    if (!paramMatch) throw new Error('NUXT params not found');
+    const params = paramMatch[1].split(',').map(s => s.trim());
+
+    // 2) metadata 필드→변수 매핑 (title:VAR, composer:VAR, coverId:VAR)
+    const metaMatch = html.match(/metadata:\{([^}]+)\}/);
+    if (!metaMatch) throw new Error('metadata not found');
+    const meta = metaMatch[1];
+    const getVar = f => { const m = meta.match(new RegExp(f + ':(\\w+)')); return m ? m[1] : null; };
+    const titleVar = getVar('title');
+    const composerVar = getVar('composer');
+    const coverIdVar = getVar('coverId');
+
+    // 3) IIFE 호출 인자 파싱 — 마지막 }( ... )) 사이의 문자열
+    const argsStart = html.lastIndexOf('}(');
+    const argsEnd = html.indexOf('))', argsStart);
+    if (argsStart < 0 || argsEnd < 0) throw new Error('args not found');
+    const argsRaw = html.substring(argsStart + 2, argsEnd);
+
+    // 인자 목록 파싱 (문자열 리터럴 + 기타 리터럴)
+    const values = [];
+    let i = 0;
+    while (i < argsRaw.length) {
+      const ch = argsRaw[i];
+      if (ch === '"') {
+        let s = ''; i++;
+        while (i < argsRaw.length) {
+          if (argsRaw[i] === '\\') { s += argsRaw[i + 1] || ''; i += 2; }
+          else if (argsRaw[i] === '"') { i++; break; }
+          else { s += argsRaw[i]; i++; }
+        }
+        values.push(s);
+      } else if (ch === ',' || ch === ' ') { i++; }
+      else {
+        let lit = '';
+        while (i < argsRaw.length && argsRaw[i] !== ',') { lit += argsRaw[i]; i++; }
+        const t = lit.trim();
+        if (t === 'true') values.push(true);
+        else if (t === 'false') values.push(false);
+        else if (t === 'null') values.push(null);
+        else if (t.startsWith('void')) values.push(undefined);
+        else values.push(t);
+      }
+    }
+
+    // 4) 변수 → 값 매핑
+    const lookup = {};
+    params.forEach((p, idx) => { if (idx < values.length) lookup[p] = values[idx]; });
+
+    const title = titleVar ? (lookup[titleVar] ?? null) : null;
+    const composer = composerVar ? (lookup[composerVar] ?? null) : null;
+    const coverId = coverIdVar ? lookup[coverIdVar] : null;
+
+    const data = {
+      title: typeof title === 'string' ? title : null,
+      composer: typeof composer === 'string' ? composer : null,
+      coverUrl: coverId ? `https://cdne-satr-prd-rsc-covers.azureedge.net/50/${coverId}.jpg` : null,
+    };
+    rscCache = { data, ts: Date.now() };
+    return data;
+  } catch {
+    return { title: null, composer: null, coverUrl: null };
   }
 }
 
