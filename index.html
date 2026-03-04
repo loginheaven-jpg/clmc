@@ -538,6 +538,7 @@ body{
     <div class="admin-tab" data-ach="list2">찬양의 숲</div>
     <div class="admin-tab" data-ach="stream">봄소리 방송</div>
     <div class="admin-tab" data-ach="rec-settings">녹음 설정</div>
+    <div class="admin-tab" data-ach="channel-cfg">채널 관리</div>
   </div>
   <div class="dropzone" id="dropzone">♫ 파일을 드래그하거나 클릭하여 선택<div class="dropzone-formats">MP3 M4A OGG WAV FLAC AAC</div></div>
   <input type="file" id="fileInput" multiple accept=".mp3,.m4a,.ogg,.wav,.flac,.aac" style="display:none">
@@ -570,6 +571,7 @@ body{
       <ul id="adminSessionListUl" style="list-style:none;padding:0;margin:0;max-height:200px;overflow-y:auto"></ul>
     </div>
   </div>
+  <div id="adminChannelPanel" style="display:none;padding:4px 0"></div>
   <div id="adminRecPanel" style="display:none">
     <div style="background:var(--bg-surface);border-radius:16px;padding:16px;border:1px solid var(--border-glass)">
       <div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:12px">녹음 자동 분할 설정</div>
@@ -697,6 +699,8 @@ let replayMode = false; // true when replaying a past session
 
 let focusedIndex = 0;
 let deferredInstallPrompt = null;
+let activeChannels = [...CHANNELS]; // 설정 적용 후 실제 채널 목록
+let adminTempCfg = null;            // 관리자 패널 편집 중인 임시 설정
 
 // Disc rotation
 let discRotation = 0;
@@ -788,6 +792,23 @@ const CHANNELS = [
 ];
 
 const CHANNEL_API_MAP = { 3:'list1', 4:'list2', 5:'stream' };
+
+// ── Channel Config (localStorage) ──────────────────────────────
+function getChannelConfig() {
+  try {
+    const raw = localStorage.getItem('radio-channel-config');
+    if (!raw) return { order: CHANNELS.map(c => c.num), hidden: [], defaultChannel: CHANNELS[0].num };
+    return JSON.parse(raw);
+  } catch { return { order: CHANNELS.map(c => c.num), hidden: [], defaultChannel: CHANNELS[0].num }; }
+}
+function applyChannelConfig() {
+  const cfg = getChannelConfig();
+  const ordered = (cfg.order || CHANNELS.map(c => c.num))
+    .map(num => CHANNELS.find(c => c.num === num)).filter(Boolean);
+  const hiddenSet = new Set(cfg.hidden || []);
+  activeChannels = ordered.filter(c => !hiddenSet.has(c.num));
+  if (activeChannels.length === 0) activeChannels = [...CHANNELS];
+}
 
 // ── DOM refs ──
 const $ = id => document.getElementById(id);
@@ -1130,7 +1151,7 @@ function stopLampAnim() {
 // ── Dot Indicators ──
 function buildDots() {
   dotIndicators.innerHTML = '';
-  CHANNELS.forEach((ch, i) => {
+  activeChannels.forEach((ch, i) => {
     const btn = document.createElement('button');
     btn.className = 'dot-ind';
     btn.title = ch.name;
@@ -1141,7 +1162,7 @@ function buildDots() {
 }
 function updateDotIndicators() {
   Array.from(dotIndicators.children).forEach((dot, i) => {
-    const ch = CHANNELS[i];
+    const ch = activeChannels[i];
     dot.style.width = (i === focusedIndex ? '24px' : '8px');
     dot.style.background = (i === focusedIndex ? ch.accent : 'rgba(255,255,255,0.1)');
     dot.style.opacity = (i === focusedIndex ? '1' : '0.5');
@@ -1150,10 +1171,10 @@ function updateDotIndicators() {
 
 // ── Channel Switching ──
 function switchToChannel(idx) {
-  if (idx < 0) idx = CHANNELS.length - 1;
-  if (idx >= CHANNELS.length) idx = 0;
+  if (idx < 0) idx = activeChannels.length - 1;
+  if (idx >= activeChannels.length) idx = 0;
   focusedIndex = idx;
-  const ch = CHANNELS[idx];
+  const ch = activeChannels[idx];
   applyChannelTheme(ch.num);
   enterChannel(ch.num);
   if (swipeHintEl) swipeHintEl.style.display = 'none';
@@ -2149,19 +2170,107 @@ function handleHeaderTap() {
   if (headerTapCount >= 3) { headerTapCount = 0; if (adminKey) openAdmin(); else $('authModal').classList.add('open'); }
 }
 function openAdmin() { $('adminOverlay').classList.add('open'); loadAdminTracks(adminChannel); if (adminChannel === 'stream') loadAdminCh5State(); }
-function closeAdmin() { $('adminOverlay').classList.remove('open'); }
+function closeAdmin() { $('adminOverlay').classList.remove('open'); adminTempCfg = null; }
+
+function buildChannelConfigUI() {
+  if (!adminTempCfg) adminTempCfg = getChannelConfig();
+  // 누락된 채널 보완 (새 채널 추가 시)
+  CHANNELS.forEach(c => { if (!adminTempCfg.order.includes(c.num)) adminTempCfg.order.push(c.num); });
+  const panel = $('adminChannelPanel');
+  panel.innerHTML = '';
+  adminTempCfg.order
+    .map(num => CHANNELS.find(c => c.num === num)).filter(Boolean)
+    .forEach((ch, i, arr) => {
+      const isHidden = (adminTempCfg.hidden || []).includes(ch.num);
+      const isDefault = adminTempCfg.defaultChannel === ch.num;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.05)';
+      row.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="extra-btn ch-arr" data-num="${ch.num}" data-dir="up" style="padding:2px 6px;font-size:0.7rem" ${i===0?'disabled':''}>▲</button>
+          <button class="extra-btn ch-arr" data-num="${ch.num}" data-dir="down" style="padding:2px 6px;font-size:0.7rem" ${i===arr.length-1?'disabled':''}>▼</button>
+        </div>
+        <div style="width:10px;height:10px;border-radius:50%;background:${ch.accent};flex-shrink:0"></div>
+        <div style="flex:1;font-size:0.85rem;${isHidden?'opacity:0.4;text-decoration:line-through':''}">${ch.name}</div>
+        <button class="extra-btn ch-def" data-num="${ch.num}" title="기본 채널"
+          style="font-size:0.9rem;${isDefault?'color:gold':'opacity:0.35'}">★</button>
+        <button class="extra-btn ch-vis" data-num="${ch.num}" title="표시/숨김"
+          style="font-size:0.9rem">${isHidden?'🙈':'👁'}</button>
+      `;
+      panel.appendChild(row);
+    });
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'save-order-btn';
+  saveBtn.textContent = '저장';
+  saveBtn.style.marginTop = '12px';
+  saveBtn.addEventListener('click', commitChannelConfig);
+  panel.appendChild(saveBtn);
+  // ▲▼ 이동
+  panel.querySelectorAll('.ch-arr').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const num = parseInt(btn.dataset.num), dir = btn.dataset.dir;
+      const order = adminTempCfg.order, idx = order.indexOf(num);
+      if (dir === 'up' && idx > 0) [order[idx-1], order[idx]] = [order[idx], order[idx-1]];
+      if (dir === 'down' && idx < order.length-1) [order[idx], order[idx+1]] = [order[idx+1], order[idx]];
+      buildChannelConfigUI();
+    });
+  });
+  // ★ 기본 채널
+  panel.querySelectorAll('.ch-def').forEach(btn => {
+    btn.addEventListener('click', () => { adminTempCfg.defaultChannel = parseInt(btn.dataset.num); buildChannelConfigUI(); });
+  });
+  // 👁 숨김/표시
+  panel.querySelectorAll('.ch-vis').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const num = parseInt(btn.dataset.num);
+      const hidden = adminTempCfg.hidden || [];
+      const idx = hidden.indexOf(num);
+      if (idx >= 0) {
+        hidden.splice(idx, 1);
+      } else {
+        const visibleAfter = adminTempCfg.order.filter(n => n !== num && !hidden.includes(n));
+        if (visibleAfter.length === 0) { showToast('최소 1개 채널은 표시해야 합니다'); return; }
+        hidden.push(num);
+      }
+      adminTempCfg.hidden = hidden;
+      buildChannelConfigUI();
+    });
+  });
+}
+
+function commitChannelConfig() {
+  localStorage.setItem('radio-channel-config', JSON.stringify(adminTempCfg));
+  adminTempCfg = null;
+  applyChannelConfig();
+  const cfg = getChannelConfig();
+  const stillVisible = activeChannels.find(c => c.num === currentChannel);
+  buildDots();
+  if (!stillVisible) {
+    const defIdx = activeChannels.findIndex(c => c.num === cfg.defaultChannel);
+    switchToChannel(defIdx >= 0 ? defIdx : 0);
+  } else {
+    focusedIndex = activeChannels.findIndex(c => c.num === currentChannel);
+    updateDotIndicators();
+  }
+  showToast('채널 설정이 저장되었습니다');
+  buildChannelConfigUI();
+}
 
 async function loadAdminTracks(ch) {
   adminChannel = ch;
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.ach === ch));
   const isRec = ch === 'rec-settings';
+  const isCfg = ch === 'channel-cfg';
+  const hideCommon = isRec || isCfg;
   $('adminLivePanel').style.display = ch === 'stream' ? '' : 'none';
   $('adminRecPanel').style.display = isRec ? '' : 'none';
-  $('dropzone').style.display = isRec ? 'none' : '';
-  $('uploadQueue').style.display = isRec ? 'none' : '';
-  $('adminTrackList').style.display = isRec ? 'none' : '';
-  $('saveOrderBtn').style.display = isRec ? 'none' : '';
-  document.querySelector('.admin-section-title').style.display = isRec ? 'none' : '';
+  $('adminChannelPanel').style.display = isCfg ? '' : 'none';
+  $('dropzone').style.display = hideCommon ? 'none' : '';
+  $('uploadQueue').style.display = hideCommon ? 'none' : '';
+  $('adminTrackList').style.display = hideCommon ? 'none' : '';
+  $('saveOrderBtn').style.display = hideCommon ? 'none' : '';
+  document.querySelector('.admin-section-title').style.display = hideCommon ? 'none' : '';
+  if (isCfg) { buildChannelConfigUI(); return; }
   if (isRec) {
     $('recThresholdSlider').value = recSilenceThresholdRaw;
     $('recThresholdVal').textContent = recSilenceThresholdRaw;
@@ -2672,13 +2781,19 @@ async function init() {
   updateClock();
   setInterval(updateClock, 1000);
 
-  const lastChannel = parseInt(localStorage.getItem('radio-last-channel') ?? '1');
-  focusedIndex = CHANNELS.findIndex(c => c.num === lastChannel);
+  applyChannelConfig(); // activeChannels 설정
+
+  const lastChannel = parseInt(localStorage.getItem('radio-last-channel') ?? '0');
+  const initCfg = getChannelConfig();
+  const defaultCh = initCfg.defaultChannel;
+  const startChannel = lastChannel || defaultCh;
+  focusedIndex = activeChannels.findIndex(c => c.num === startChannel);
+  if (focusedIndex < 0) focusedIndex = activeChannels.findIndex(c => c.num === defaultCh);
   if (focusedIndex < 0) focusedIndex = 0;
 
   buildDots();
   initDiscSwipe();
-  applyChannelTheme(CHANNELS[focusedIndex].num);
+  applyChannelTheme(activeChannels[focusedIndex].num);
   initSpeedBtns();
   initPwa();
   initAutoUpdate();
@@ -2686,7 +2801,7 @@ async function init() {
   // Auto-hide swipe hint after 6s
   setTimeout(() => { if (swipeHintEl) swipeHintEl.style.display = 'none'; }, 6500);
 
-  await enterChannel(lastChannel);
+  await enterChannel(activeChannels[focusedIndex].num);
 }
 
 window.addEventListener('DOMContentLoaded', init);
