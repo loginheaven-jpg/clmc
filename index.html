@@ -1309,7 +1309,7 @@ function playTrack(channel, trackIndex, startPosition = 0) {
     src: [streamUrl(track.key)], html5: true, volume: currentVolume, rate: currentSpeed,
     onplay: function() {
       isPlaying = true; updatePlayBtn(true);
-      if (startPosition > 3) currentHowl.seek(startPosition);
+      if (startPosition > 3) { currentHowl.seek(startPosition); startPosition = 0; }
       startSeekUpdate();
     },
     onpause: function() { isPlaying = false; updatePlayBtn(false); saveResume(channel); },
@@ -1359,11 +1359,13 @@ function startSeekUpdate() {
   cancelAnimationFrame(seekRaf);
   function update() {
     if (!currentHowl || !isPlaying) return;
-    const pos = currentHowl.seek() || 0;
-    const dur = currentHowl.duration() || 1;
-    seekFill.style.width = (pos/dur*100) + '%';
-    timePos.textContent = formatTime(pos);
-    timeDur.textContent = formatTime(dur);
+    if (!seekDragging) {
+      const pos = currentHowl.seek() || 0;
+      const dur = currentHowl.duration() || 1;
+      seekFill.style.width = (pos/dur*100) + '%';
+      timePos.textContent = formatTime(pos);
+      timeDur.textContent = formatTime(dur);
+    }
     seekRaf = requestAnimationFrame(update);
   }
   update();
@@ -2369,19 +2371,24 @@ volSlider.addEventListener('input', e => {
 
 // Seek bar drag (mouse + touch)
 let seekDragging = false;
+let seekDragRatio = 0;
 function seekToX(clientX) {
   if (!currentHowl) return;
   const rect = seekBar.getBoundingClientRect();
-  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  currentHowl.seek(currentHowl.duration() * ratio);
-  seekFill.style.width = (ratio * 100) + '%';
+  seekDragRatio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  seekFill.style.width = (seekDragRatio * 100) + '%';
+  timePos.textContent = formatTime(currentHowl.duration() * seekDragRatio);
+}
+function applySeek() {
+  if (!currentHowl) return;
+  currentHowl.seek(currentHowl.duration() * seekDragRatio);
 }
 seekBar.addEventListener('mousedown', e => { seekDragging = true; seekToX(e.clientX); });
 document.addEventListener('mousemove', e => { if (seekDragging) seekToX(e.clientX); });
-document.addEventListener('mouseup', () => { seekDragging = false; });
+document.addEventListener('mouseup', () => { if (seekDragging) { applySeek(); seekDragging = false; } });
 seekBar.addEventListener('touchstart', e => { seekDragging = true; seekToX(e.touches[0].clientX); e.preventDefault(); }, {passive: false});
 document.addEventListener('touchmove', e => { if (seekDragging) seekToX(e.touches[0].clientX); });
-document.addEventListener('touchend', () => { seekDragging = false; });
+document.addEventListener('touchend', () => { if (seekDragging) { applySeek(); seekDragging = false; } });
 
 speedWrap.addEventListener('click', e => {
   const btn = e.target.closest('.speed-btn');
