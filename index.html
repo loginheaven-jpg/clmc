@@ -250,10 +250,10 @@ body{
 
 /* Track Panel */
 .track-panel{
-  position:fixed;bottom:0;left:0;right:0;max-height:70vh;
+  position:fixed;bottom:12px;left:12px;right:12px;max-height:70vh;
   background:rgba(13,11,26,0.97);backdrop-filter:blur(20px);
-  border-top:1px solid var(--border-glass);border-radius:20px 20px 0 0;
-  padding:16px;z-index:300;transform:translateY(100%);
+  border:1px solid var(--border-glass);border-radius:20px;
+  padding:16px;z-index:300;transform:translateY(calc(100% + 12px));
   transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);overflow-y:auto;max-width:480px;margin:0 auto;
 }
 .track-panel.open{transform:translateY(0)}
@@ -1325,6 +1325,7 @@ function playTrack(channel, trackIndex, startPosition = 0) {
   nowPlayingEl.textContent = track.name;
   updateTrackCounter();
   updateTrackListUI();
+  if (trackPanel.classList.contains('open')) scrollToActiveTrack();
 }
 
 function playNext(channel) {
@@ -2003,8 +2004,12 @@ async function loadPastBroadcasts() {
     });
   } catch {}
 }
-function openTrackPanel() { updateTrackListUI(); trackPanel.classList.add('open'); backdrop.classList.add('open'); }
+function openTrackPanel() { updateTrackListUI(); trackPanel.classList.add('open'); backdrop.classList.add('open'); scrollToActiveTrack(); }
 function closeTrackPanel() { trackPanel.classList.remove('open'); backdrop.classList.remove('open'); }
+function scrollToActiveTrack() {
+  const active = trackListEl.querySelector('.track-item.active');
+  if (active) setTimeout(() => active.scrollIntoView({ block: 'center', behavior: 'smooth' }), 100);
+}
 
 // ── Admin ──
 let headerTapCount = 0, headerTapTimer = null;
