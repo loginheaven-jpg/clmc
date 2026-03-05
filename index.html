@@ -699,7 +699,7 @@ let replayMode = false; // true when replaying a past session
 
 let focusedIndex = 0;
 let deferredInstallPrompt = null;
-let activeChannels = [...CHANNELS]; // 설정 적용 후 실제 채널 목록
+let activeChannels = []; // 설정 적용 후 실제 채널 목록 (applyChannelConfig()가 채움)
 let adminTempCfg = null;            // 관리자 패널 편집 중인 임시 설정
 
 // Disc rotation
