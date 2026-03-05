@@ -775,7 +775,7 @@ async function getRscNowPlaying() {
     const data = {
       title: typeof title === 'string' ? title : null,
       composer: typeof composer === 'string' ? composer : null,
-      coverUrl: coverId ? `https://cdne-satr-prd-rsc-covers.azureedge.net/50/${coverId}.jpg` : null,
+      coverUrl: coverId ? `https://cdne-satr-prd-rsc-covers.azureedge.net/200/${coverId}.jpg` : null,
     };
     rscCache = { data, ts: Date.now() };
     return data;
