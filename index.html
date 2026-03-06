@@ -210,7 +210,6 @@ body{
 /* Playlist Extras */
 .playlist-extras{display:none;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;position:relative;z-index:2}
 .playlist-extras.visible{display:flex}
-.track-counter{font-size:11px;opacity:0.4;font-variant-numeric:tabular-nums}
 .divider{opacity:0.15;font-size:10px}
 .speed-btn{
   padding:4px 11px;border-radius:8px;font-size:11px;font-weight:600;
@@ -485,8 +484,6 @@ body{
 
   <!-- Playlist Extras -->
   <div class="playlist-extras" id="playlistExtras">
-    <span class="track-counter" id="trackCounter"></span>
-    <span class="divider">│</span>
     <div id="speedWrap" style="display:inline-flex;gap:4px">
       <button class="speed-btn" data-speed="1">1×</button>
       <button class="speed-btn" data-speed="1.1">1.1×</button>
@@ -494,7 +491,7 @@ body{
       <button class="speed-btn" data-speed="1.5">1.5×</button>
     </div>
     <div style="width:100%;display:flex;justify-content:center;gap:8px">
-      <button class="pill-btn" id="btnTrackList">📋 목록</button>
+      <button class="pill-btn" id="btnTrackList">📋 목록 <span id="trackCounter" style="opacity:0.5"></span></button>
       <button class="pill-btn" id="btnRepeat">🔁 이곡반복</button>
       <button class="pill-btn" id="btnShuffle">🔀 랜덤듣기</button>
     </div>
@@ -512,9 +509,10 @@ body{
       <span class="vol-num" id="volNum">80</span>
     </div>
     <div class="panel-row">
-      <svg width="14" height="14" viewBox="0 0 14 14" style="opacity:0.3;flex-shrink:0">
-        <path d="M7 1 C7 1 9 4 9 7 C9 10 7 13 7 13 C5 11 3 9 3 7 C3 5 5 3 7 1Z" stroke="#ece4d8" stroke-width="1" fill="none"/>
-        <circle cx="7" cy="7" r="1.5" fill="#ece4d8" opacity="0.4"/>
+      <svg width="14" height="14" viewBox="0 0 16 16" style="opacity:0.3;flex-shrink:0">
+        <path d="M6 1C3.2 1.8 1.5 4.6 2.3 7.4C3.1 10.2 5.9 11.9 8.7 11.1C9.5 10.9 10.2 10.4 10.7 9.9C8.2 10.2 5.9 8.3 5.5 5.8C5.2 4 5.9 2.3 7.2 1.3C6.8 1.1 6.4 1 6 1Z" fill="#ece4d8"/>
+        <text x="11" y="5" font-size="5" font-weight="700" fill="#ece4d8" font-family="sans-serif">Z</text>
+        <text x="13" y="3" font-size="3.5" font-weight="700" fill="#ece4d8" font-family="sans-serif" opacity="0.6">z</text>
       </svg>
       <div class="sleep-btns" id="sleepBtns">
         <button class="sleep-btn" data-sec="600">10분</button>
