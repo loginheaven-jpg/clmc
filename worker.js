@@ -364,6 +364,18 @@ export default {
         return handleIdentify(request, env, cors);
       }
 
+      // ── Channel Config (서버 기반 채널 설정) ──
+      if (path === '/api/channel-config' && method === 'GET') {
+        const raw = await env.RADIO_KV.get('channel-config');
+        return json(raw ? JSON.parse(raw) : null, cors);
+      }
+      if (path === '/api/channel-config' && method === 'PUT') {
+        if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
+        const body = await request.json();
+        await env.RADIO_KV.put('channel-config', JSON.stringify(body));
+        return json({ ok: true }, cors);
+      }
+
       return new Response('Not Found', { status: 404, headers: cors });
 
     } catch (e) {

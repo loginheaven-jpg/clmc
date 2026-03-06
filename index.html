@@ -806,12 +806,25 @@ const CHANNELS = [
 const CHANNEL_API_MAP = { 3:'list1', 4:'list2', 5:'stream' };
 
 // ── Channel Config (localStorage) ──────────────────────────────
+const DEFAULT_CH_CFG = { order: CHANNELS.map(c => c.num), hidden: [], defaultChannel: CHANNELS[0].num };
 function getChannelConfig() {
   try {
     const raw = localStorage.getItem('radio-channel-config');
-    if (!raw) return { order: CHANNELS.map(c => c.num), hidden: [], defaultChannel: CHANNELS[0].num };
+    if (!raw) return { ...DEFAULT_CH_CFG };
     return JSON.parse(raw);
-  } catch { return { order: CHANNELS.map(c => c.num), hidden: [], defaultChannel: CHANNELS[0].num }; }
+  } catch { return { ...DEFAULT_CH_CFG }; }
+}
+async function fetchServerChannelConfig() {
+  try {
+    const res = await fetch(WORKER_URL + '/api/channel-config');
+    if (!res.ok) return null;
+    const cfg = await res.json();
+    if (cfg && cfg.order) {
+      localStorage.setItem('radio-channel-config', JSON.stringify(cfg));
+      return cfg;
+    }
+  } catch {}
+  return null;
 }
 function applyChannelConfig() {
   const cfg = getChannelConfig();
@@ -2308,7 +2321,17 @@ function buildChannelConfigUI() {
 }
 
 function commitChannelConfig() {
-  localStorage.setItem('radio-channel-config', JSON.stringify(adminTempCfg));
+  const cfgToSave = JSON.stringify(adminTempCfg);
+  localStorage.setItem('radio-channel-config', cfgToSave);
+  // 서버에도 저장 (관리자 인증)
+  fetch(WORKER_URL + '/api/channel-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+    body: cfgToSave
+  }).then(r => {
+    if (r.ok) showToast('채널 설정이 서버에 저장되었습니다');
+    else showToast('서버 저장 실패 (로컬만 저장됨)');
+  }).catch(() => showToast('서버 저장 실패 (로컬만 저장됨)'));
   adminTempCfg = null;
   applyChannelConfig();
   const cfg = getChannelConfig();
@@ -2321,7 +2344,6 @@ function commitChannelConfig() {
     focusedIndex = activeChannels.findIndex(c => c.num === currentChannel);
     updateDotIndicators();
   }
-  showToast('채널 설정이 저장되었습니다');
   buildChannelConfigUI();
 }
 
@@ -2895,6 +2917,7 @@ async function init() {
   updateClock();
   setInterval(updateClock, 1000);
 
+  await fetchServerChannelConfig(); // 서버 설정 → localStorage 동기화
   applyChannelConfig(); // activeChannels 설정
 
   const urlParams = new URLSearchParams(window.location.search);

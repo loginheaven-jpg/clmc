@@ -1,6 +1,6 @@
 # 예봄라디오 2.0 — 아키텍처 문서
 
-> **버전**: 2026-03-06 v2.5.0 (채널 공유 + 로딩 인디케이터)
+> **버전**: 2026-03-06 v2.5.1 (채널 설정 서버 동기화)
 > **프로젝트 경로**: `c:\dev\radio\yebomradio`
 > **GitHub**: https://github.com/loginheaven-jpg/radio
 > **Pages URL**: https://radio-axi.pages.dev
@@ -102,6 +102,8 @@ c:\dev\radio\
 | **GET** | **`/api/live/sessions`** | **저장된 방송 세션 목록** | 없음 |
 | **POST** | **`/api/live/sessions/delete`** | **세션 수동 삭제** | **Admin** |
 | POST | `/api/identify` | 곡명 인식 (HLS 세그먼트 3개 병합 → ACRCloud 핑거프린팅) | 없음 |
+| GET | `/api/channel-config` | 서버 채널 설정 조회 (order, hidden, defaultChannel) | 없음 |
+| PUT | `/api/channel-config` | 서버 채널 설정 저장 | `Bearer ADMIN_KEY` |
 
 ### HLS 프록시 화이트리스트
 `gscdn.kbs.co.kr`, `kbs.co.kr`, `febc.net`, `mlive2.febc.net`
@@ -838,6 +840,7 @@ git push origin main
 | 2026-03-04 | v2.3.1 | **곡명 인식 버그 수정**. 극동방송 m3u8 URL 수정 (404→정상). 세그먼트 1개→3개 병합으로 인식 정확도 향상. 파일명 sample.ts→sample.aac 수정. |
 | 2026-03-04 | v2.4.0 | **SSO 로그인 연동**. 녹음 기능에 로그인 게이팅 추가. 교적부(saint.yebom.org) 세션 API CORS 연동. 로그인 모달 UI. localStorage 캐시 (5분 TTL). 미로그인 시 녹음 버튼 클릭 → 로그인 팝업 → 교적부 로그인 페이지 리다이렉트. |
 | 2026-03-06 | v2.5.0 | **채널 공유 링크 + 로딩 인디케이터**. 채널명 옆 공유 아이콘으로 현재 채널+곡 URL 클립보드 복사 (`?ch=3&track=...`). URL 파라미터로 공유 링크 수신 시 해당 채널/곡 자동 재생. 채널 전환 시 재생 버튼에 회전 링 로딩 애니메이션. CH3/4/5 로딩 중 텍스트 피드백 추가. 10초 안전 타임아웃. |
+| 2026-03-06 | v2.5.1 | **채널 설정 서버 동기화**. Workers KV에 채널 설정 저장 (`GET/PUT /api/channel-config`). 관리자가 설정하면 모든 기기에 동일 적용. 프론트엔드 초기화 시 서버 설정 fetch → localStorage 동기화. 관리자 저장 시 서버에 PUT. |
 
 ---
 
