@@ -1616,6 +1616,7 @@ async function enterChannel(channel) {
   else if (channel === 3 || channel === 4) {
     nowPlayingEl.textContent = '트랙 로딩 중...';
     const tracks = await fetchTracks(channel);
+    if (channel === 3 && shuffleOn) { shuffleOn = false; btnShuffle.classList.remove('active'); }
     if (channel === 4 && !shuffleOn) { shuffleOn = true; btnShuffle.classList.add('active'); shuffleOrder = makeShuffleOrder(tracks.length); }
     if (sharedTrack) {
       const si = tracks.findIndex(t => t.key === sharedTrack);
