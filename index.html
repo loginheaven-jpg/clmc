@@ -1278,6 +1278,33 @@ function stopPlayback() {
   cancelAnimationFrame(seekRaf);
 }
 
+// ── Media Session (잠금화면/알림 미디어 컨트롤) ──
+function updateMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  const ch = activeChannels[focusedIndex];
+  if (!ch) return;
+  const title = nowPlayingEl.textContent || ch.name;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: title,
+    artist: ch.name,
+    album: '예봄라디오',
+    artwork: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ]
+  });
+  navigator.mediaSession.setActionHandler('previoustrack', () => {
+    const prevIdx = (focusedIndex - 1 + activeChannels.length) % activeChannels.length;
+    switchToChannel(prevIdx);
+  });
+  navigator.mediaSession.setActionHandler('nexttrack', () => {
+    const nextIdx = (focusedIndex + 1) % activeChannels.length;
+    switchToChannel(nextIdx);
+  });
+  navigator.mediaSession.setActionHandler('play', () => handlePlayPause());
+  navigator.mediaSession.setActionHandler('pause', () => handlePlayPause());
+}
+
 // ── Worker URL Setup ──
 function ensureWorkerUrl() {
   return new Promise(resolve => {
@@ -1443,6 +1470,7 @@ function playTrack(channel, trackIndex, startPosition = 0) {
   updateTrackCounter();
   updateTrackListUI();
   if (trackPanel.classList.contains('open')) scrollToActiveTrack();
+  updateMediaSession();
 }
 
 function playNext(channel) {
@@ -1644,11 +1672,12 @@ async function loadKbs() {
     const res = await fetch(WORKER_URL + '/api/kbs');
     const { streamUrl: sUrl, programTitle } = await res.json();
     nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + (programTitle || 'KBS 클래식 FM');
+    updateMediaSession();
     await playHls(sUrl, true);
     kbsRefreshTimer = setInterval(async () => {
       if (currentChannel !== 1 || !isPlaying) return;
       try { const r = await fetch(WORKER_URL + '/api/kbs'); const d = await r.json();
-        if (d.programTitle) nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + d.programTitle;
+        if (d.programTitle) { nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + d.programTitle; updateMediaSession(); }
       } catch {}
     }, 60000);
   } catch (e) { nowPlayingEl.textContent = 'KBS 연결 실패'; showToast('KBS 스트리밍 연결 실패'); }
@@ -1664,11 +1693,12 @@ async function loadFebc() {
     let title = '극동방송';
     try { const r = await fetch(WORKER_URL + '/api/febc-schedule'); const d = await r.json(); if (d.programTitle) title = d.programTitle; } catch {}
     nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + title;
+    updateMediaSession();
     await playHls(FEBC_URL, true);
     febcRefreshTimer = setInterval(async () => {
       if (currentChannel !== 2 || !isPlaying) return;
       try { const r = await fetch(WORKER_URL + '/api/febc-schedule'); const d = await r.json();
-        if (d.programTitle) nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + d.programTitle;
+        if (d.programTitle) { nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + d.programTitle; updateMediaSession(); }
       } catch {}
     }, 60000);
   } catch (e) { nowPlayingEl.textContent = '극동방송 연결 실패'; showToast('극동방송 스트리밍 연결 실패'); }
@@ -1686,6 +1716,7 @@ async function loadRsc() {
       if (d.title) npText = (d.composer ? d.composer + ' — ' : '') + d.title;
     } catch {}
     nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + npText;
+    updateMediaSession();
     const url = RSC_STREAMS[rscFormat];
     await playIcecast(url);
     rscRefreshTimer = setInterval(async () => {
@@ -1696,6 +1727,7 @@ async function loadRsc() {
         if (d.title) {
           const text = (d.composer ? d.composer + ' — ' : '') + d.title;
           nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> ' + text;
+          updateMediaSession();
         }
       } catch {}
     }, 30000);
@@ -1741,6 +1773,7 @@ async function pollCh5State() {
       return;
     }
     nowPlayingEl.innerHTML = '<span class="on-air-badge">ON AIR</span> ' + (state.trackName || '');
+    updateMediaSession();
     const tracks = channelTracks[5] || [];
     const idx = tracks.findIndex(t => t.key === state.trackKey);
     if (currentHowl) { currentHowl.unload(); currentHowl = null; }
