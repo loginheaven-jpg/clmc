@@ -2800,7 +2800,12 @@ $('shareBtn').addEventListener('click', () => {
   if ((currentChannel === 3 || currentChannel === 4 || currentChannel === 5) && currentTrackKey) {
     url.searchParams.set('track', currentTrackKey);
   }
-  navigator.clipboard.writeText(url.toString())
+  const chName = channelNameEl.textContent || '';
+  const trackName = currentTrackName || '';
+  let text = '예봄라디오 - ' + chName;
+  if (trackName) text += '\n' + trackName;
+  text += '\n' + url.toString();
+  navigator.clipboard.writeText(text)
     .then(() => showToast('링크가 복사되었습니다'))
     .catch(() => showToast('링크 복사 실패'));
 });
