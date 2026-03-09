@@ -1100,8 +1100,10 @@ async function fetchServerChannelConfig() {
 }
 function applyChannelConfig() {
   const cfg = getChannelConfig();
-  const ordered = (cfg.order || CHANNELS.map(c => c.num))
-    .map(num => CHANNELS.find(c => c.num === num)).filter(Boolean);
+  const savedOrder = cfg.order || CHANNELS.map(c => c.num);
+  const ordered = savedOrder.map(num => CHANNELS.find(c => c.num === num)).filter(Boolean);
+  // 새로 추가된 채널(savedOrder에 없는 것)을 끝에 추가
+  CHANNELS.forEach(c => { if (!savedOrder.includes(c.num)) ordered.push(c); });
   const hiddenSet = new Set(cfg.hidden || []);
   activeChannels = ordered.filter(c => !hiddenSet.has(c.num));
   if (activeChannels.length === 0) activeChannels = [...CHANNELS];
@@ -2873,9 +2875,9 @@ function initOrAdminPanel() {
       });
       const data = await res.json();
       if (res.ok) {
-        const mb = (data.totalBytes / 1048576).toFixed(1);
-        const limitMb = (data.limitBytes / 1048576).toFixed(0);
-        storageInfo.textContent = `사용: ${mb} MB / ${limitMb} MB  |  파일 ${data.fileCount}개  |  폴더 ${data.folderCount}개`;
+        const mb = (data.currentStorageUsed / 1048576).toFixed(1);
+        const limitMb = (data.maxTotalStorageGB * 1024).toFixed(0);
+        storageInfo.textContent = `사용: ${mb} MB / ${limitMb} MB  |  트랙 ${data.totalTracks}개  |  폴더 ${data.totalFolders}개`;
       } else storageInfo.textContent = data.error || '조회 실패';
     } catch (e) { storageInfo.textContent = '오류: ' + e.message; }
     finally { newStorageBtn.disabled = false; }
