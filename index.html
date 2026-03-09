@@ -1974,6 +1974,9 @@ async function enterChannel(channel) {
     await startCh5Polling();
   } else if (channel === 6) {
     await loadRsc();
+  } else if (channel === 7) {
+    nowPlayingEl.textContent = '열린 음악방';
+    openRoomOpen();
   }
 
   // 채널 3,4,5: 5분마다 재생목록 자동 갱신
@@ -1988,10 +1991,6 @@ async function enterChannel(channel) {
         showToast('재생목록 업데이트됨');
       }
     }, 5 * 60 * 1000);
-  }
-  } else if (channel === 7) {
-    nowPlayingEl.textContent = '열린 음악방';
-    openRoomOpen();
   }
   clearTimeout(loadingTimeout);
   mainPlayBtn.classList.remove('loading');
