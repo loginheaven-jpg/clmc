@@ -2856,7 +2856,7 @@ function initOrAdminPanel() {
     initResult.textContent = '실행 중...';
     try {
       const res = await fetch(WORKER_URL + '/api/openroom/admin/init', {
-        method: 'POST', headers: { 'X-Admin-Key': adminKey }
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + adminKey }
       });
       const data = await res.json();
       initResult.style.color = res.ok ? '#7c9e6e' : '#ff9090';
@@ -2869,7 +2869,7 @@ function initOrAdminPanel() {
     storageInfo.textContent = '조회 중...';
     try {
       const res = await fetch(WORKER_URL + '/api/openroom/admin/storage', {
-        headers: { 'X-Admin-Key': adminKey }
+        headers: { 'Authorization': 'Bearer ' + adminKey }
       });
       const data = await res.json();
       if (res.ok) {
