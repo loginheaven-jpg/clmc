@@ -2722,8 +2722,20 @@ function closeAdmin() { $('adminOverlay').classList.remove('open'); adminTempCfg
 
 function buildChannelConfigUI() {
   if (!adminTempCfg) adminTempCfg = getChannelConfig();
-  // 누락된 채널 보완 (새 채널 추가 시)
-  CHANNELS.forEach(c => { if (!adminTempCfg.order.includes(c.num)) adminTempCfg.order.push(c.num); });
+  // 누락된 채널 보완 (새 채널 추가 시) — 발견 즉시 자동 저장
+  const missingBefore = CHANNELS.filter(c => !adminTempCfg.order.includes(c.num));
+  missingBefore.forEach(c => adminTempCfg.order.push(c.num));
+  if (missingBefore.length > 0) {
+    const cfgStr = JSON.stringify(adminTempCfg);
+    localStorage.setItem('radio-channel-config', cfgStr);
+    fetch(WORKER_URL + '/api/channel-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+      body: cfgStr
+    }).catch(() => {});
+    applyChannelConfig();
+    buildDots();
+  }
   const panel = $('adminChannelPanel');
   panel.innerHTML = '';
   adminTempCfg.order
