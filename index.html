@@ -891,6 +891,7 @@ let currentVolume = parseFloat(localStorage.getItem('radio-volume') ?? '0.8');
 let currentSpeed = 1;
 let shuffleOn = false;
 let repeatOn = false;
+let appStartup = true; // 앱 첫 로드 시 자동재생 방지
 let shuffleOrder = [];
 
 let channelTracks = {};
@@ -1782,7 +1783,12 @@ function playTrack(channel, trackIndex, startPosition = 0) {
     onend: function() { isPlaying = false; stopVis(); localStorage.removeItem('radio-ch'+channel+'-resume'); stopSilentAnchor(); playNext(channel); },
     onloaderror: function(_, e) { showToast('로드 오류: ' + (e || '')); },
   });
-  currentHowl.play();
+  if (!appStartup) {
+    currentHowl.play();
+  } else {
+    appStartup = false;
+    clearTimeout(loadingTimeout); mainPlayBtn.classList.remove('loading');
+  }
   nowPlayingEl.textContent = track.name;
   updateTrackCounter();
   updateTrackListUI();
@@ -1880,7 +1886,7 @@ function handlePlayPause() {
     if (currentHowl) {
       if (isPlaying) { currentHowl.pause(); userPausedCh5 = true; }
       else { currentHowl.play(); userPausedCh5 = false; }
-    }
+    } else { enterChannel(5); }
   }
 }
 
@@ -1931,6 +1937,17 @@ async function enterChannel(channel) {
   seekFill.style.width = '0%';
   timePos.textContent = '0:00';
   timeDur.textContent = '0:00';
+
+  // 앱 최초 로드 시: 라이브 채널은 스트림 연결 없이 채널명만 표시
+  if (appStartup && (channel === 1 || channel === 2 || channel === 5 || channel === 6)) {
+    appStartup = false;
+    clearTimeout(loadingTimeout); mainPlayBtn.classList.remove('loading');
+    if (channel === 1) nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> KBS 클래식 FM';
+    else if (channel === 2) nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> 극동방송';
+    else if (channel === 5) nowPlayingEl.textContent = '재생 버튼을 눌러 시작하세요';
+    else if (channel === 6) nowPlayingEl.innerHTML = '<span class="live-badge">LIVE</span> Radio Swiss Classic';
+    return;
+  }
 
   if (channel === 1) await loadKbs();
   else if (channel === 2) await loadFebc();
