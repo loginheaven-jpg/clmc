@@ -3483,13 +3483,21 @@ document.getElementById('orAdminSheetSubmit').addEventListener('click', async ()
 });
 
 async function orOpen() {
-  await orLoadFolders();
-  orRenderFolderList();
+  // 패널을 즉시 열고 로딩 표시 후 데이터 로드
   orFolderView.style.display = '';
   orTrackView.style.display = 'none';
   orPanelTitle.textContent = '🎵 열린 음악방';
   orBackBtn.style.display = 'none';
+  orFolderList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-mute);font-size:0.85rem">불러오는 중...</div>';
   orPanel.classList.add('open');
+  try {
+    await orLoadFolders();
+    if (currentChannel !== 7) return; // 이미 다른 채널로 이동했으면 중단
+    orRenderFolderList();
+  } catch(e) {
+    console.error('[orOpen error]', e);
+    showToast('열린 음악방 열기 실패: ' + e.message);
+  }
 }
 
 function orClose() {
