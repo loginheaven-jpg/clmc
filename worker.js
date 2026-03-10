@@ -1260,6 +1260,20 @@ async function handleOpenRoom(request, env, cors, path, method, url) {
     return json({ ok: true, track: { ...ref, folder: folderName } }, cors);
   }
 
+  // PUT /api/openroom/folders/:name/order — 곡 순서 저장 (관리자)
+  const orderMatch = path.match(/^\/api\/openroom\/folders\/([^/]+)\/order$/);
+  if (orderMatch && method === 'PUT') {
+    if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
+    const folderName = decodeURIComponent(orderMatch[1]);
+    const { refIds } = await request.json();
+    if (!Array.isArray(refIds)) return json({ error: 'refIds 배열 필요' }, cors, 400);
+    const tracks = await orGetFolderTracks(env, folderName);
+    const trackMap = Object.fromEntries(tracks.map(t => [t.refId, t]));
+    const reordered = refIds.map(id => trackMap[id]).filter(Boolean);
+    await orSaveFolderTracks(env, folderName, reordered);
+    return json({ ok: true }, cors);
+  }
+
   // PUT /api/openroom/tracks/:refId — 곡 이름 수정
   const trackEditMatch = path.match(/^\/api\/openroom\/tracks\/([^/]+)$/);
   if (trackEditMatch && method === 'PUT') {

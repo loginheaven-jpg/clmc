@@ -736,6 +736,7 @@ body{
     <ul class="or-track-list" id="orTrackList"></ul>
     <div class="or-actions">
       <button class="or-upload-btn" id="orUploadBtn" style="display:none">🎵 곡 올리기</button>
+      <button class="extra-btn" id="orSaveOrderBtn" style="display:none;font-size:0.78rem">순서 저장</button>
     </div>
   </div>
 </div>
@@ -1920,8 +1921,8 @@ async function enterChannel(channel) {
   recordTimerRow.classList.remove('visible');
 
   playlistExtras.classList.toggle('visible', isPod);
-  btnShuffle.style.display = isR2 ? '' : 'none';
-  btnRepeat.style.display = isR2 ? '' : 'none';
+  btnShuffle.style.display = (isR2 || isOpenRoom) ? '' : 'none';
+  btnRepeat.style.display = (isR2 || isOpenRoom) ? '' : 'none';
 
   seekFill.style.width = '0%';
   timePos.textContent = '0:00';
@@ -3296,12 +3297,15 @@ function orRenderTrackList(query) {
     li.textContent = q ? '검색 결과가 없습니다' : '아직 곡이 없습니다' + (radioUser ? '' : '\n로그인하면 곡을 올릴 수 있습니다');
     orTrackList.appendChild(li);
   }
+  let orDragSrcIdx = null;
   filtered.forEach(({ t, i }) => {
     const li = document.createElement('li');
     li.className = 'or-track-item' + (t.r2Key === currentTrackKey ? ' active' : '');
+    li.dataset.refid = t.refId;
     const isOwner = radioUser && t.uploaderId === radioUser.id;
-    const showMenu = isOwner || adminKey;
+    const showMenu = isOwner || !!adminKey;
     li.innerHTML = `
+      ${adminKey ? '<span class="admin-drag-handle" style="cursor:grab;padding:0 6px;color:var(--text-dim)">≡</span>' : ''}
       <span class="or-track-num">${t.r2Key === currentTrackKey ? '▶' : (i + 1)}</span>
       <div class="or-track-info">
         <div class="or-track-name">${highlightMatch(t.displayName, q)}</div>
@@ -3309,13 +3313,28 @@ function orRenderTrackList(query) {
       </div>
       ${showMenu ? `<button class="or-track-menu-btn" data-refid="${escHtml(t.refId)}">⋮</button>` : ''}`;
     li.addEventListener('click', (e) => {
-      if (e.target.classList.contains('or-track-menu-btn')) return;
+      if (e.target.classList.contains('or-track-menu-btn') || e.target.classList.contains('admin-drag-handle')) return;
       orPlayTrack(t, i);
     });
     if (showMenu) {
       li.querySelector('.or-track-menu-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         orShowCtxMenu(e, t, isOwner);
+      });
+    }
+    if (adminKey) {
+      li.draggable = true;
+      li.addEventListener('dragstart', e => { orDragSrcIdx = i; e.dataTransfer.effectAllowed = 'move'; li.style.opacity = '0.5'; });
+      li.addEventListener('dragend', () => { li.style.opacity = '1'; });
+      li.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+      li.addEventListener('drop', e => {
+        e.preventDefault();
+        if (orDragSrcIdx === null || orDragSrcIdx === i) return;
+        const moved = orCurrentTracks.splice(orDragSrcIdx, 1)[0];
+        orCurrentTracks.splice(i, 0, moved);
+        orDragSrcIdx = null;
+        document.getElementById('orSaveOrderBtn').style.display = '';
+        orRenderTrackList('');
       });
     }
     orTrackList.appendChild(li);
@@ -3336,7 +3355,7 @@ function orPlayTrack(track, idx) {
   currentTrackKey = track.r2Key;
   currentTrackName = track.displayName;
   currentTrackIdx = idx;
-  const url = WORKER_URL + '/api/stream/' + track.r2Key.split('/').map(encodeURIComponent).join('/');
+  const url = WORKER_URL + '/api/stream/openroom/files/' + encodeURIComponent(track.r2Key);
   currentHowl = new Howl({
     src: [url], html5: true, volume: currentVolume, rate: currentSpeed,
     onplay: () => { isPlaying = true; updatePlayBtn(true); startSeekUpdate(); startSilentAnchor(); updateMediaSession(); },
@@ -3354,8 +3373,17 @@ function orPlayTrack(track, idx) {
 
 function orPlayNext() {
   const idx = orCurrentTracks.findIndex(t => t.r2Key === currentTrackKey);
-  if (idx < 0 || idx >= orCurrentTracks.length - 1) return;
-  orPlayTrack(orCurrentTracks[idx + 1], idx + 1);
+  if (idx < 0) return;
+  let nextIdx;
+  if (repeatOn) { nextIdx = idx; }
+  else if (shuffleOn && shuffleOrder.length > 0) {
+    const pos = shuffleOrder.indexOf(idx);
+    nextIdx = shuffleOrder[(pos + 1) % shuffleOrder.length];
+  } else {
+    if (idx >= orCurrentTracks.length - 1) return;
+    nextIdx = idx + 1;
+  }
+  orPlayTrack(orCurrentTracks[nextIdx], nextIdx);
 }
 
 function orShowCtxMenu(e, track, isOwner) {
@@ -3660,6 +3688,23 @@ orBackBtn.addEventListener('click', () => {
   orLoadFolders().then(orRenderFolderList);
 });
 
+// 곡 순서 저장
+document.getElementById('orSaveOrderBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('orSaveOrderBtn');
+  btn.disabled = true;
+  try {
+    const refIds = orCurrentTracks.map(t => t.refId);
+    const res = await fetch(orApiUrl(`/folders/${encodeURIComponent(orCurrentFolder)}/order`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+      body: JSON.stringify({ refIds })
+    });
+    if (res.ok) { showToast('순서가 저장되었습니다'); btn.style.display = 'none'; }
+    else showToast('저장 실패');
+  } catch { showToast('오류가 발생했습니다'); }
+  finally { btn.disabled = false; }
+});
+
 document.getElementById('orPanelClose').addEventListener('click', orClose);
 orSheetOverlay.addEventListener('click', orCloseSheets);
 
@@ -3845,8 +3890,11 @@ function initSpeedBtns() {
 btnShuffle.addEventListener('click', () => {
   shuffleOn = !shuffleOn;
   btnShuffle.classList.toggle('active', shuffleOn);
-  if (shuffleOn) { shuffleOrder = makeShuffleOrder((channelTracks[currentChannel]||[]).length); showToast('랜덤듣기 ON'); }
-  else { shuffleOrder = []; showToast('랜덤듣기 OFF'); }
+  if (shuffleOn) {
+    const len = currentChannel === 7 ? orCurrentTracks.length : (channelTracks[currentChannel]||[]).length;
+    shuffleOrder = makeShuffleOrder(len);
+    showToast('랜덤듣기 ON');
+  } else { shuffleOrder = []; showToast('랜덤듣기 OFF'); }
 });
 btnRepeat.addEventListener('click', () => {
   repeatOn = !repeatOn;
