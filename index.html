@@ -1598,6 +1598,7 @@ function stopPlayback() {
   isPlaying = false;
   updatePlayBtn(false);
   cancelAnimationFrame(seekRaf);
+  stopBgKeepAlive();
 }
 
 // ── Media Session (잠금화면/알림 미디어 컨트롤) ──
@@ -2209,6 +2210,42 @@ function cleanupResumeOnDelete(deletedKey) {
 setInterval(() => { if (isPlaying && (currentChannel === 3 || currentChannel === 4)) saveResume(currentChannel); }, 5000);
 window.addEventListener('beforeunload', () => saveResume(currentChannel));
 window.addEventListener('pagehide', () => saveResume(currentChannel));
+// ── 백그라운드 킵얼라이브 (Android Doze 대응) ──
+let bgKeepAliveTimer = null;
+
+function startBgKeepAlive() {
+  if (bgKeepAliveTimer) return;
+  bgKeepAliveTimer = setInterval(() => {
+    if (!isPlaying) return;
+    // Howler 노드가 멈췄으면 즉시 복구
+    if (currentHowl) {
+      const node = currentHowl._sounds[0]?._node;
+      if (node && node.paused && !node.ended) {
+        node.play().catch(() => {});
+      }
+      // 볼륨이 초기화됐으면 복원
+      if (currentHowl.volume() !== currentVolume) {
+        currentHowl.volume(currentVolume);
+      }
+    }
+    // HLS <audio> 노드가 멈췄으면 복구
+    if (audioEl && audioEl.paused && !audioEl.ended) {
+      audioEl.play().catch(() => {});
+    }
+    // AudioContext suspended 복구
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    // Wake Lock 재획득 (해제됐을 수 있음)
+    if (!wakeLock) requestWakeLock();
+  }, 25000); // 25초 주기
+}
+
+function stopBgKeepAlive() {
+  clearInterval(bgKeepAliveTimer);
+  bgKeepAliveTimer = null;
+}
+
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
     saveResume(currentChannel);
@@ -2216,18 +2253,31 @@ document.addEventListener('visibilitychange', async () => {
     clearInterval(ch5PollTimer); ch5PollTimer = null;
     // 등잔 애니메이션 정지 (배터리 절약)
     if (currentChannel === 3) stopLampAnim();
+    // 백그라운드 킵얼라이브 시작
+    if (isPlaying) startBgKeepAlive();
   } else {
+    // 킵얼라이브 중지 (포그라운드에서는 불필요)
+    stopBgKeepAlive();
     // AudioContext가 백그라운드에서 suspended 됐으면 복구 (await로 완료 보장)
     if (audioCtx && audioCtx.state === 'suspended') {
       try { await audioCtx.resume(); } catch {}
     }
+    // Wake Lock 재획득
+    if (isPlaying) requestWakeLock();
     // HLS/Icecast (<audio> 요소): 재생 상태인데 멈춰 있으면 재시작
     if (isPlaying && audioEl && audioEl.paused && !audioEl.ended) {
       audioEl.play().catch(() => {});
+      if (audioEl.volume !== currentVolume && !hlsSourceNode) audioEl.volume = currentVolume;
     }
-    // Howler: 내부 상태와 실제 재생 불일치 복구
-    if (isPlaying && currentHowl && !currentHowl.playing()) {
-      currentHowl.play();
+    // Howler: 내부 상태와 실제 재생 불일치 복구 + 볼륨 보존
+    if (isPlaying && currentHowl) {
+      if (!currentHowl.playing()) {
+        currentHowl.play();
+      }
+      // 볼륨 강제 복원 (Android resume 시 풀볼륨 버그 방지)
+      currentHowl.volume(currentVolume);
+      const node = currentHowl._sounds[0]?._node;
+      if (node) node.volume = currentVolume;
     }
     // 라이브 폴링 재개
     if (liveMode && liveSessionId && !livePollTimer) {
