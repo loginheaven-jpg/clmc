@@ -2646,7 +2646,7 @@ function updateTrackListUI(query) {
   if (query === undefined) query = trackSearchInput.value;
   const isPod = currentChannel === 3 || currentChannel === 4;
   trackSearchWrap.classList.toggle('visible', isPod);
-  if (currentChannel === 7) { orPanel.classList.add('open'); return; } // CH7은 자체 패널 사용
+  if (currentChannel === 7) return; // CH7은 openTrackPanel에서 처리
   const tracks = channelTracks[currentChannel] || [];
   const q = query ? query.trim() : '';
   const filtered = q ? tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.name.toLowerCase().includes(q.toLowerCase())) : tracks.map((t, i) => ({ t, i }));
@@ -2697,7 +2697,20 @@ async function loadPastBroadcasts() {
     });
   } catch {}
 }
-function openTrackPanel() { trackSearchInput.value = ''; updateTrackListUI(''); trackPanel.classList.add('open'); backdrop.classList.add('open'); scrollToActiveTrack(); }
+function openTrackPanel() {
+  if (currentChannel === 7) {
+    // CH7: 항상 폴더 리스트 뷰로 열기
+    orFolderView.style.display = '';
+    orTrackView.style.display = 'none';
+    orBackBtn.style.display = 'none';
+    orPanelTitle.textContent = '🎵 열린 음악방';
+    orPanel.classList.add('open');
+    if (orFolders.length === 0) orLoadFolders().then(orRenderFolderList);
+    else orRenderFolderList();
+    return;
+  }
+  trackSearchInput.value = ''; updateTrackListUI(''); trackPanel.classList.add('open'); backdrop.classList.add('open'); scrollToActiveTrack();
+}
 function closeTrackPanel() { trackPanel.classList.remove('open'); backdrop.classList.remove('open'); }
 function scrollToActiveTrack() {
   if (trackSearchInput.value) return;
