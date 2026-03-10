@@ -299,9 +299,12 @@ body{
 .or-back-btn{font-size:1.1rem}
 #orFolderView,#orTrackView{overflow-y:auto;flex:1}
 .or-folder-list{display:flex;flex-direction:column;gap:6px}
-.or-folder-item{display:flex;align-items:center;gap:10px;padding:12px 10px;
-  border-radius:12px;cursor:pointer;transition:background 0.2s;border:1px solid transparent}
-.or-folder-item:hover,.or-folder-item:active{background:rgba(122,158,110,0.1);border-color:rgba(122,158,110,0.2)}
+.or-folder-item{display:flex;align-items:center;border-radius:12px;overflow:hidden;border:1px solid transparent;transition:border-color 0.2s}
+.or-folder-item:hover{border-color:rgba(122,158,110,0.2)}
+.or-folder-play-area{display:flex;align-items:center;gap:10px;padding:12px 10px;flex:1;cursor:pointer;border-radius:12px 0 0 12px;transition:background 0.2s}
+.or-folder-play-area:hover,.or-folder-play-area:active{background:rgba(122,158,110,0.12)}
+.or-folder-enter-area{display:flex;align-items:center;gap:4px;padding:12px 10px;cursor:pointer;border-radius:0 12px 12px 0;transition:background 0.2s;border-left:1px solid rgba(122,158,110,0.15)}
+.or-folder-enter-area:hover,.or-folder-enter-area:active{background:rgba(122,158,110,0.2)}
 .or-folder-icon{font-size:1.2rem;width:24px;text-align:center}
 .or-folder-name{flex:1;font-size:0.9rem;font-weight:500}
 .or-folder-count{font-size:0.75rem;color:var(--text-dim);margin-right:4px}
@@ -2643,7 +2646,7 @@ function updateTrackListUI(query) {
   if (query === undefined) query = trackSearchInput.value;
   const isPod = currentChannel === 3 || currentChannel === 4;
   trackSearchWrap.classList.toggle('visible', isPod);
-  if (currentChannel === 7) return; // CH7은 자체 패널 사용
+  if (currentChannel === 7) { orPanel.classList.add('open'); return; } // CH7은 자체 패널 사용
   const tracks = channelTracks[currentChannel] || [];
   const q = query ? query.trim() : '';
   const filtered = q ? tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.name.toLowerCase().includes(q.toLowerCase())) : tracks.map((t, i) => ({ t, i }));
@@ -3247,11 +3250,17 @@ function orRenderFolderList() {
   const renderItem = (f) => {
     const li = document.createElement('div');
     li.className = 'or-folder-item';
-    li.innerHTML = `<span class="or-folder-icon">${escHtml(f.icon)}</span>
-      <span class="or-folder-name">${escHtml(f.name)}</span>
-      <span class="or-folder-count">${f.trackCount ?? 0}곡</span>
-      <span class="or-folder-arrow">›</span>`;
-    li.addEventListener('click', () => orOpenFolder(f.name));
+    // 왼쪽: 아이콘+이름 클릭 → 즉시 재생 (팝업 닫힘)
+    const playArea = document.createElement('span');
+    playArea.className = 'or-folder-play-area';
+    playArea.innerHTML = `<span class="or-folder-icon">${escHtml(f.icon)}</span><span class="or-folder-name">${escHtml(f.name)}</span>`;
+    playArea.addEventListener('click', () => orAutoPlayFolder(f.name));
+    // 오른쪽: 곡수+화살표 클릭 → 폴더 입장
+    const enterArea = document.createElement('span');
+    enterArea.className = 'or-folder-enter-area';
+    enterArea.innerHTML = `<span class="or-folder-count">${f.trackCount ?? 0}곡</span><span class="or-folder-arrow">›</span>`;
+    enterArea.addEventListener('click', () => orOpenFolder(f.name));
+    li.appendChild(playArea); li.appendChild(enterArea);
     orFolderList.appendChild(li);
   };
   defaults.forEach(renderItem);
@@ -3266,6 +3275,7 @@ function orRenderFolderList() {
 
 async function orOpenFolder(folderName) {
   orCurrentFolder = folderName;
+  channelLabelEl.textContent = folderName;
   orPanelTitle.textContent = (orFolders.find(f => f.name === folderName)?.icon || '🎵') + ' ' + folderName;
   orBackBtn.style.display = '';
   orFolderView.style.display = 'none';
@@ -3275,6 +3285,17 @@ async function orOpenFolder(folderName) {
   await orLoadTracks(folderName);
   orRenderTrackList();
   orUploadBtn.style.display = radioUser ? '' : 'none';
+}
+
+async function orAutoPlayFolder(folderName) {
+  orCurrentFolder = folderName;
+  channelLabelEl.textContent = folderName;
+  orPanel.classList.remove('open');
+  await orLoadTracks(folderName);
+  if (!orCurrentTracks.length) { showToast('이 폴더에 곡이 없습니다'); return; }
+  if (shuffleOn) shuffleOrder = makeShuffleOrder(orCurrentTracks.length);
+  const startIdx = (shuffleOn && shuffleOrder.length) ? shuffleOrder[0] : 0;
+  orPlayTrack(orCurrentTracks[startIdx], startIdx);
 }
 
 async function orLoadTracks(folderName) {
@@ -3305,7 +3326,7 @@ function orRenderTrackList(query) {
     const isOwner = radioUser && t.uploaderId === radioUser.id;
     const showMenu = isOwner || !!adminKey;
     li.innerHTML = `
-      ${adminKey ? '<span class="admin-drag-handle" style="cursor:grab;padding:0 6px;color:var(--text-dim)">≡</span>' : ''}
+      ${radioUser ? '<span class="admin-drag-handle" style="cursor:grab;padding:0 6px;color:var(--text-dim)">≡</span>' : ''}
       <span class="or-track-num">${t.r2Key === currentTrackKey ? '▶' : (i + 1)}</span>
       <div class="or-track-info">
         <div class="or-track-name">${highlightMatch(t.displayName, q)}</div>
@@ -3315,6 +3336,7 @@ function orRenderTrackList(query) {
     li.addEventListener('click', (e) => {
       if (e.target.classList.contains('or-track-menu-btn') || e.target.classList.contains('admin-drag-handle')) return;
       orPlayTrack(t, i);
+      orPanel.classList.remove('open');
     });
     if (showMenu) {
       li.querySelector('.or-track-menu-btn').addEventListener('click', (e) => {
@@ -3322,7 +3344,7 @@ function orRenderTrackList(query) {
         orShowCtxMenu(e, t, isOwner);
       });
     }
-    if (adminKey) {
+    if (radioUser) {
       li.draggable = true;
       li.addEventListener('dragstart', e => { orDragSrcIdx = i; e.dataTransfer.effectAllowed = 'move'; li.style.opacity = '0.5'; });
       li.addEventListener('dragend', () => { li.style.opacity = '1'; });
@@ -3696,7 +3718,7 @@ document.getElementById('orSaveOrderBtn').addEventListener('click', async () => 
     const refIds = orCurrentTracks.map(t => t.refId);
     const res = await fetch(orApiUrl(`/folders/${encodeURIComponent(orCurrentFolder)}/order`), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+      headers: { 'Content-Type': 'application/json', ...orUserHeaders() },
       body: JSON.stringify({ refIds })
     });
     if (res.ok) { showToast('순서가 저장되었습니다'); btn.style.display = 'none'; }

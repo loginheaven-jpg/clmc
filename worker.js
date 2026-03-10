@@ -1198,16 +1198,6 @@ async function handleOpenRoom(request, env, cors, path, method, url) {
     if (!allowedMimes.includes(mime) && !mime.startsWith('audio/'))
       return json({ error: 'MP3, M4A, WAV 파일만 올릴 수 있습니다' }, cors, 400);
 
-    // 사용자 업로드 수 체크 (전체 폴더 합산)
-    const allFolders = await orGetFolders(env);
-    let userUploadCount = 0;
-    for (const f of allFolders) {
-      const ft = await orGetFolderTracks(env, f.name);
-      userUploadCount += ft.filter(t => t.uploaderId === user.id).length;
-    }
-    if (userUploadCount >= settings.maxUploadsPerUser)
-      return json({ error: `곡은 최대 ${settings.maxUploadsPerUser}개까지 올릴 수 있습니다` }, cors, 400);
-
     // 파일 확장자
     const extMap = { 'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav' };
     const ext = extMap[mime] || '.mp3';
@@ -1260,10 +1250,11 @@ async function handleOpenRoom(request, env, cors, path, method, url) {
     return json({ ok: true, track: { ...ref, folder: folderName } }, cors);
   }
 
-  // PUT /api/openroom/folders/:name/order — 곡 순서 저장 (관리자)
+  // PUT /api/openroom/folders/:name/order — 곡 순서 저장 (로그인 사용자)
   const orderMatch = path.match(/^\/api\/openroom\/folders\/([^/]+)\/order$/);
   if (orderMatch && method === 'PUT') {
-    if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
+    const orderUser = getRequestUser(request);
+    if (!orderUser) return json({ error: 'Unauthorized' }, cors, 401);
     const folderName = decodeURIComponent(orderMatch[1]);
     const { refIds } = await request.json();
     if (!Array.isArray(refIds)) return json({ error: 'refIds 배열 필요' }, cors, 400);
