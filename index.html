@@ -242,6 +242,7 @@ body{
 .sleep-btns{display:flex;gap:6px;flex:1}
 .sleep-btn{
   flex:1;padding:6px 0;border-radius:9px;font-size:11px;cursor:pointer;transition:all 0.2s;
+  background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(236,228,216,0.72);
 }
 .sleep-remaining{font-family:'Space Grotesk',monospace;font-size:13px;color:var(--accent);min-width:50px;text-align:center;display:none}
 .sleep-remaining.visible{display:block}
@@ -2653,9 +2654,9 @@ function updateSleepUI() {
   const def = CHANNELS.find(c => c.num === currentChannel);
   document.querySelectorAll('.sleep-btn').forEach(b => {
     const active = parseInt(b.dataset.sec) === sleepSecs;
-    b.style.border = active ? `1px solid ${def.accent}50` : '1px solid rgba(255,255,255,0.06)';
+    b.style.border = active ? `1px solid ${def.accent}50` : '1px solid rgba(255,255,255,0.12)';
     b.style.background = active ? `${def.accent}14` : 'transparent';
-    b.style.color = active ? def.accentLight : '#ece4d855';
+    b.style.color = active ? def.accentLight : 'rgba(236,228,216,0.72)';
     b.style.fontWeight = active ? '600' : '400';
   });
   $('sleepRemaining').classList.toggle('visible', sleepSecs > 0);
@@ -4249,6 +4250,7 @@ async function init() {
   initSpeedBtns();
   initPwa();
   initAutoUpdate();
+  updateSleepUI();
 
   // Auto-hide swipe hint after 6s
   setTimeout(() => { if (swipeHintEl) swipeHintEl.style.display = 'none'; }, 6500);
