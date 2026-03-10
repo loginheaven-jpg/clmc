@@ -1228,6 +1228,8 @@ async function handleOpenRoom(request, env, cors, path, method, url) {
 
     // 폴더에 참조 추가
     const folderTracks = await orGetFolderTracks(env, folderName);
+    if (folderTracks.length >= 100)
+      return json({ error: '폴더당 최대 100곡까지 올릴 수 있습니다' }, cors, 400);
     if (folderTracks.some(t => t.r2Key === r2Key))
       return json({ error: '이 폴더에 이미 동일한 곡이 있습니다' }, cors, 409);
 
