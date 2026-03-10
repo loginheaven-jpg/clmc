@@ -463,6 +463,17 @@ body{
 .ios-guide-box p{font-size:0.85rem;color:var(--text-dim);line-height:1.6;margin-bottom:8px}
 .ios-guide-close{margin-top:12px;padding:8px 20px;border-radius:10px;border:none;background:var(--accent);color:var(--bg-deep);font-size:0.85rem;cursor:pointer}
 
+/* PWA 설치 권유 팝업 */
+.pwa-prompt-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:700;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
+.pwa-prompt-modal.open{display:flex;animation:fadeIn 0.3s ease}
+.pwa-prompt-box{background:var(--bg-mid);border:1px solid var(--border-glass);border-radius:24px 24px 16px 16px;padding:28px 24px 20px;width:100%;max-width:420px;text-align:center}
+.pwa-prompt-icon{font-size:2.8rem;margin-bottom:10px;line-height:1}
+.pwa-prompt-title{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:var(--text)}
+.pwa-prompt-desc{font-size:0.85rem;color:var(--text-dim);line-height:1.7;margin-bottom:20px}
+.pwa-prompt-install{display:block;width:100%;padding:14px 0;border-radius:14px;border:none;background:var(--accent);color:var(--bg-deep);font-size:0.95rem;font-weight:700;cursor:pointer;margin-bottom:10px;transition:opacity 0.2s}
+.pwa-prompt-install:hover{opacity:0.85}
+.pwa-prompt-later{background:none;border:none;color:var(--text-dim);font-size:0.82rem;cursor:pointer;padding:6px;width:100%}
+
 /* Backdrop */
 .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:150}
 .backdrop.open{display:block}
@@ -870,6 +881,16 @@ body{
 <div class="setup-modal" id="setupModal"><div class="auth-box"><h3>Workers URL 설정</h3><input type="url" id="setupInput" placeholder="https://radio-worker.xxx.workers.dev"><button id="setupSubmit">저장</button></div></div>
 <div class="toast" id="toast"></div>
 <div class="ios-guide-modal" id="iosGuideModal"><div class="ios-guide-box"><h3>홈 화면에 추가</h3><p>Safari 하단의 <strong>공유 버튼</strong> (⬆) 을 탭한 후<br><strong>"홈 화면에 추가"</strong>를 선택하세요.</p><button class="ios-guide-close" id="iosGuideClose">확인</button></div></div>
+
+<div class="pwa-prompt-modal" id="pwaPromptModal">
+  <div class="pwa-prompt-box">
+    <div class="pwa-prompt-icon">📻</div>
+    <div class="pwa-prompt-title">예봄라디오 앱으로 즐기세요</div>
+    <div class="pwa-prompt-desc">홈 화면에 추가하면 앱처럼 빠르게 실행되고<br>백그라운드 재생이 더욱 안정적입니다.</div>
+    <button class="pwa-prompt-install" id="pwaPromptInstall">📲 홈 화면에 추가하기</button>
+    <button class="pwa-prompt-later" id="pwaPromptLater">나중에 할게요</button>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -4034,6 +4055,8 @@ function initPwa() {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (isStandalone) return;
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+  // 기존 하단 버튼
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $('pwaInstallBtn').style.display = 'block'; });
   $('pwaInstallBtn').addEventListener('click', async () => {
     if (isIos) { $('iosGuideModal').classList.add('open'); return; }
@@ -4041,6 +4064,43 @@ function initPwa() {
   });
   $('iosGuideClose').addEventListener('click', () => $('iosGuideModal').classList.remove('open'));
   if (isIos) $('pwaInstallBtn').style.display = 'block';
+
+  // ── 설치 권유 팝업 ──
+  const DISMISS_KEY = 'pwa-prompt-dismissed';
+  const DISMISS_DAYS = 7;
+  const dismissed = parseInt(localStorage.getItem(DISMISS_KEY) || '0');
+  if (Date.now() - dismissed < DISMISS_DAYS * 86400000) return; // 7일 이내 → 스킵
+
+  const showPromptPopup = () => {
+    if ($('pwaPromptModal').classList.contains('open')) return;
+    $('pwaPromptModal').classList.add('open');
+  };
+
+  // iOS: 2초 후 바로 표시
+  if (isIos) {
+    setTimeout(showPromptPopup, 2000);
+  } else {
+    // Chrome/Edge: beforeinstallprompt 수신 후 2초 후 표시
+    window.addEventListener('beforeinstallprompt', () => setTimeout(showPromptPopup, 2000), { once: true });
+  }
+
+  // 설치하기 버튼
+  $('pwaPromptInstall').addEventListener('click', async () => {
+    $('pwaPromptModal').classList.remove('open');
+    if (isIos) { $('iosGuideModal').classList.add('open'); return; }
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const r = await deferredInstallPrompt.userChoice;
+      if (r.outcome === 'accepted') $('pwaInstallBtn').style.display = 'none';
+      deferredInstallPrompt = null;
+    }
+  });
+
+  // 나중에 버튼
+  $('pwaPromptLater').addEventListener('click', () => {
+    $('pwaPromptModal').classList.remove('open');
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+  });
 }
 
 // ── Auto Update ──
