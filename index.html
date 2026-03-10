@@ -2366,6 +2366,26 @@ function stopRecording() {
 
 // ── Live Chunk Player (v2 — 순차 fetch + 버퍼 관리) ──
 
+// ── Wake Lock (화면 꺼져도 CPU/네트워크 유지) ──
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (e) { console.log('WakeLock:', e.message); }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+// visibilitychange 시 Wake Lock 자동 재획득 (브라우저가 탭 복귀 시 해제하므로)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && isPlaying) requestWakeLock();
+});
+
 // ── 무음 오디오 앵커 (백그라운드 재생 유지용) ──
 let silentAnchor = null;
 let silentAnchorUrl = null;
@@ -2401,6 +2421,7 @@ function startSilentAnchor() {
   silentAnchor.loop = true;
   silentAnchor.volume = 0.01;
   silentAnchor.play().catch(() => {});
+  requestWakeLock();
 }
 
 function stopSilentAnchor() {
@@ -2409,6 +2430,7 @@ function stopSilentAnchor() {
     silentAnchor.src = '';
     silentAnchor = null;
   }
+  releaseWakeLock();
 }
 
 async function ensureLiveAudioCtx() {
