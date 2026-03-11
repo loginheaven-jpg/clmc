@@ -473,9 +473,7 @@ body{
 .pwa-prompt-desc{font-size:0.85rem;color:var(--text-dim);line-height:1.7;margin-bottom:20px}
 .pwa-prompt-install{display:block;width:100%;padding:14px 0;border-radius:14px;border:none;background:var(--accent);color:var(--bg-deep);font-size:0.95rem;font-weight:700;cursor:pointer;margin-bottom:10px;transition:opacity 0.2s}
 .pwa-prompt-install:hover{opacity:0.85}
-.pwa-prompt-actions{display:flex;align-items:center;justify-content:center;gap:6px}
-.pwa-prompt-later,.pwa-prompt-never{background:none;border:none;color:var(--text-dim);font-size:0.82rem;cursor:pointer;padding:6px}
-.pwa-prompt-sep{color:var(--text-dim);opacity:0.4;font-size:0.75rem}
+.pwa-prompt-later{background:none;border:none;color:var(--text-dim);font-size:0.82rem;cursor:pointer;padding:6px;width:100%}
 
 /* Backdrop */
 .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:150}
@@ -891,11 +889,7 @@ body{
     <div class="pwa-prompt-title">예봄라디오 앱으로 즐기세요</div>
     <div class="pwa-prompt-desc">홈 화면에 추가하면 앱처럼 빠르게 실행되고<br>백그라운드 재생이 더욱 안정적입니다.</div>
     <button class="pwa-prompt-install" id="pwaPromptInstall">📲 홈 화면에 추가하기</button>
-    <div class="pwa-prompt-actions">
-      <button class="pwa-prompt-later" id="pwaPromptLater">3일 후 다시 보기</button>
-      <span class="pwa-prompt-sep">·</span>
-      <button class="pwa-prompt-never" id="pwaPromptNever">다시 안 보기</button>
-    </div>
+    <button class="pwa-prompt-later" id="pwaPromptLater">나중에 할게요</button>
   </div>
 </div>
 
@@ -4300,14 +4294,13 @@ async function initPwa() {
   if (isIos) $('pwaInstallBtn').style.display = 'block';
 
   // ── 설치 권유 팝업 ──
-  const DISMISS_KEY = 'pwa-prompt-dismissed';   // 값: 타임스탬프 or 'never'
-  const dismissed   = localStorage.getItem(DISMISS_KEY);
-  if (dismissed === 'never') return;            // 다시 안 보기
-  if (dismissed && Date.now() - parseInt(dismissed) < 3 * 86400000) return; // 3일 억제
+  // 설치 확인 전까지 매 방문마다 표시 (같은 세션 내 중복 방지)
+  if (sessionStorage.getItem('pwa-prompt-shown')) return;
 
   const showPromptPopup = () => {
     if ($('pwaPromptModal').classList.contains('open')) return;
     $('pwaPromptModal').classList.add('open');
+    sessionStorage.setItem('pwa-prompt-shown', '1');
   };
 
   if (isIos) {
@@ -4328,16 +4321,9 @@ async function initPwa() {
     }
   });
 
-  // 3일 후 다시 보기
+  // 나중에 (이번 세션만 닫기, 다음 방문에 다시 표시)
   $('pwaPromptLater').addEventListener('click', () => {
     $('pwaPromptModal').classList.remove('open');
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-  });
-
-  // 다시 안 보기
-  $('pwaPromptNever').addEventListener('click', () => {
-    $('pwaPromptModal').classList.remove('open');
-    localStorage.setItem(DISMISS_KEY, 'never');
   });
 }
 
