@@ -1786,20 +1786,73 @@ function streamUrl(key) {
   return WORKER_URL + '/api/stream/' + key.split('/').map(encodeURIComponent).join('/');
 }
 
-function playTrack(channel, trackIndex, startPosition = 0) {
+// 트랙 전체를 Blob으로 프리로드 (네트워크 의존 제거)
+const blobCache = new Map(); // key → blobUrl
+let preloadingKey = null;
+
+async function preloadTrackBlob(key) {
+  if (blobCache.has(key)) return blobCache.get(key);
+  const res = await fetch(streamUrl(key));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  // 캐시 크기 제한 (3개 초과 시 오래된 것 제거)
+  if (blobCache.size >= 3) {
+    const oldest = blobCache.keys().next().value;
+    URL.revokeObjectURL(blobCache.get(oldest));
+    blobCache.delete(oldest);
+  }
+  blobCache.set(key, url);
+  return url;
+}
+
+// 다음 곡 미리 프리로드
+function preloadNextTrack(channel) {
+  const tracks = channelTracks[channel];
+  if (!tracks || tracks.length <= 1) return;
+  let nextIdx;
+  if (shuffleOn && shuffleOrder.length > 0) {
+    const pos = shuffleOrder.indexOf(currentTrackIdx);
+    nextIdx = shuffleOrder[(pos + 1) % shuffleOrder.length];
+  } else {
+    nextIdx = (currentTrackIdx + 1) % tracks.length;
+  }
+  const nextKey = tracks[nextIdx]?.key;
+  if (nextKey && !blobCache.has(nextKey) && preloadingKey !== nextKey) {
+    preloadingKey = nextKey;
+    preloadTrackBlob(nextKey).catch(() => {}).finally(() => { preloadingKey = null; });
+  }
+}
+
+async function playTrack(channel, trackIndex, startPosition = 0) {
   const tracks = channelTracks[channel];
   if (!tracks || trackIndex >= tracks.length) return;
   const track = tracks[trackIndex];
   stopHls();
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
   currentTrackKey = track.key; currentTrackName = track.name; currentTrackIdx = trackIndex;
+  nowPlayingEl.textContent = '로딩 중...';
+
+  // 전체 파일을 Blob으로 다운로드
+  let src;
+  try {
+    src = await preloadTrackBlob(track.key);
+  } catch (e) {
+    showToast('로드 오류: ' + (e.message || ''));
+    nowPlayingEl.textContent = track.name;
+    return;
+  }
+
   currentHowl = new Howl({
-    src: [streamUrl(track.key)], html5: true, volume: currentVolume, rate: currentSpeed,
+    src: [src], html5: true, volume: currentVolume, rate: currentSpeed,
+    format: ['mp3'],
     onplay: function() {
       isPlaying = true; updatePlayBtn(true);
       if (startPosition > 3) { currentHowl.seek(startPosition); startPosition = 0; }
       startSeekUpdate();
       startSilentAnchor();
+      // 재생 시작 후 다음 곡 미리 프리로드
+      setTimeout(() => preloadNextTrack(channel), 3000);
     },
     onpause: function() { isPlaying = false; updatePlayBtn(false); saveResume(channel); stopSilentAnchor(); },
     onstop: function() { isPlaying = false; updatePlayBtn(false); stopSilentAnchor(); },
