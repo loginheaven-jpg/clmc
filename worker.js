@@ -53,7 +53,7 @@ export default {
           cursor = list.truncated ? list.cursor : undefined;
         } while (cursor);
         const audioFiles = allObjects.filter(
-          obj => /\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(obj.key)
+          obj => /\.(mp3|m4a|ogg|wav|flac|aac|opus)$/i.test(obj.key)
         );
 
         const metaKey = prefix + '_meta.json';
