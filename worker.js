@@ -97,7 +97,7 @@ export default {
         const totalSize = headObj.size;
         const ext = key.split('.').pop().toLowerCase();
         const contentTypeMap = {
-          mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg',
+          mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg; codecs=opus',
           wav: 'audio/wav', flac: 'audio/flac', aac: 'audio/aac',
         };
 
@@ -1032,7 +1032,7 @@ const OR_DEFAULT_SETTINGS = {
   maxFileSizeMB: 50,
   maxTotalStorageGB: 2,
   emptyFolderCleanupDays: 30,
-  allowedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/mp3'],
+  allowedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/mp3', 'audio/ogg', 'audio/opus'],
   maxUploadsPerUser: 20,
   currentStorageUsed: 0,
 };
@@ -1196,10 +1196,10 @@ async function handleOpenRoom(request, env, cors, path, method, url) {
     const mime = file.type || 'audio/mpeg';
     const allowedMimes = settings.allowedMimeTypes || OR_DEFAULT_SETTINGS.allowedMimeTypes;
     if (!allowedMimes.includes(mime) && !mime.startsWith('audio/'))
-      return json({ error: 'MP3, M4A, WAV 파일만 올릴 수 있습니다' }, cors, 400);
+      return json({ error: 'MP3, M4A, WAV, OGG, OPUS 파일만 올릴 수 있습니다' }, cors, 400);
 
     // 파일 확장자
-    const extMap = { 'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav' };
+    const extMap = { 'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/ogg': '.ogg', 'audio/opus': '.opus' };
     const ext = extMap[mime] || '.mp3';
 
     // 해시 기반 중복 제거

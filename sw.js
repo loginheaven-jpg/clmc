@@ -1,7 +1,7 @@
 const CACHE_NAME = 'yebom-radio-v7';
 
 const NO_CACHE_PATTERNS = [
-  /\.mp3$/, /\.m4a$/, /\.ogg$/, /\.wav$/, /\.flac$/,
+  /\.mp3$/, /\.m4a$/, /\.ogg$/, /\.wav$/, /\.flac$/, /\.opus$/,
   /\.m3u8$/, /\.ts$/, /\.aac$/,
   /\/api\//,
   /kbs\.co\.kr/, /febc\.net/, /srg-ssr\.ch/,
