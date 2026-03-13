@@ -411,6 +411,32 @@ export default {
         await env.RADIO_KV.put('anniversary:messages', JSON.stringify(messages));
         return json({ ok: true, message: msg }, cors);
       }
+      // 축하 메시지 수정 (관리자 전용)
+      if (path === '/api/anniversary/messages' && method === 'PUT') {
+        if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
+        const body = await request.json();
+        const { id, text } = body;
+        if (!id || !text) return json({ error: 'id, text 필수' }, cors, 400);
+        const raw = await env.RADIO_KV.get('anniversary:messages');
+        const messages = raw ? JSON.parse(raw) : [];
+        const msg = messages.find(m => m.id === id);
+        if (!msg) return json({ error: '메시지 없음' }, cors, 404);
+        msg.text = text.trim().slice(0, 200);
+        await env.RADIO_KV.put('anniversary:messages', JSON.stringify(messages));
+        return json({ ok: true }, cors);
+      }
+      // 축하 메시지 삭제 (관리자 전용)
+      if (path === '/api/anniversary/messages' && method === 'DELETE') {
+        if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
+        const body = await request.json();
+        const { id } = body;
+        if (!id) return json({ error: 'id 필수' }, cors, 400);
+        const raw = await env.RADIO_KV.get('anniversary:messages');
+        let messages = raw ? JSON.parse(raw) : [];
+        messages = messages.filter(m => m.id !== id);
+        await env.RADIO_KV.put('anniversary:messages', JSON.stringify(messages));
+        return json({ ok: true }, cors);
+      }
 
       // ── 열린 음악방 (Open Room) ────────────────────────────────
       if (path.startsWith('/api/openroom')) {

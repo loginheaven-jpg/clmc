@@ -535,7 +535,11 @@ body{
 .guestbook-list::-webkit-scrollbar-thumb{background:rgba(212,164,92,0.2);border-radius:3px}
 .guestbook-item{background:rgba(212,164,92,0.05);border:1px solid rgba(212,164,92,0.1);border-radius:12px;padding:12px 14px;opacity:0;transform:translateY(8px);animation:gbItemIn 0.4s ease forwards}
 @keyframes gbItemIn{to{opacity:1;transform:translateY(0)}}
-.guestbook-item-time{font-size:11px;color:#9a9494;text-align:right;margin-top:4px}
+.guestbook-item-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.guestbook-item-time{font-size:11px;color:#9a9494}
+.gb-admin-btns{display:flex;gap:6px}
+.gb-edit-btn,.gb-del-btn{background:none;border:none;color:rgba(212,164,92,0.4);cursor:pointer;font-size:14px;padding:2px 4px;transition:color 0.2s}
+.gb-edit-btn:hover,.gb-del-btn:hover{color:#d4a45c}
 .guestbook-item-text{font-size:13px;color:#ece4d8;line-height:1.6;word-break:break-word}
 .guestbook-empty{text-align:center;color:rgba(212,164,92,0.35);font-size:13px;padding:24px 0}
 .guestbook-enter-btn{flex-shrink:0;margin-top:16px;opacity:1!important;transform:none!important;transition:background 0.3s,border-color 0.3s!important}
@@ -4623,13 +4627,27 @@ function initAnniversarySplash() {
       return;
     }
     list.innerHTML = '';
+    const isAdm = !!adminKey;
     messages.forEach((m, i) => {
       const div = document.createElement('div');
       div.className = 'guestbook-item';
       div.style.animationDelay = (i * 0.05) + 's';
+      const adminBtns = isAdm
+        ? '<span class="gb-admin-btns">' +
+            '<button class="gb-edit-btn" title="수정">&#9998;</button>' +
+            '<button class="gb-del-btn" title="삭제">&#128465;</button>' +
+          '</span>'
+        : '';
       div.innerHTML =
         '<div class="guestbook-item-text">' + escHtml(m.text) + '</div>' +
-        '<div class="guestbook-item-time">' + relTime(m.createdAt) + '</div>';
+        '<div class="guestbook-item-foot">' +
+          '<span class="guestbook-item-time">' + relTime(m.createdAt) + '</span>' +
+          adminBtns +
+        '</div>';
+      if (isAdm) {
+        div.querySelector('.gb-edit-btn').onclick = () => editGbMsg(m.id, m.text);
+        div.querySelector('.gb-del-btn').onclick = () => deleteGbMsg(m.id);
+      }
       list.appendChild(div);
     });
   }
@@ -4640,10 +4658,12 @@ function initAnniversarySplash() {
 
   function relTime(ts) {
     const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60) return '방금 전';
-    if (diff < 3600) return Math.floor(diff / 60) + '분 전';
-    if (diff < 86400) return Math.floor(diff / 3600) + '시간 전';
-    return Math.floor(diff / 86400) + '일 전';
+    const d = new Date(ts);
+    const date = (d.getMonth()+1) + '/' + d.getDate();
+    if (diff < 60) return date + ' · 방금 전';
+    if (diff < 3600) return date + ' · ' + Math.floor(diff / 60) + '분 전';
+    if (diff < 86400) return date + ' · ' + Math.floor(diff / 3600) + '시간 전';
+    return date + ' · ' + Math.floor(diff / 86400) + '일 전';
   }
 
   async function submitAndEnter() {
@@ -4670,6 +4690,33 @@ function initAnniversarySplash() {
       }
     }
     dismissSplash();
+  }
+
+  async function editGbMsg(id, oldText) {
+    const newText = prompt('메시지 수정:', oldText);
+    if (newText === null || newText.trim() === oldText) return;
+    try {
+      await fetch(WORKER_URL + '/api/anniversary/messages', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+        body: JSON.stringify({ id, text: newText.trim() })
+      });
+      await loadGuestbookMessages();
+      showToast('수정 완료');
+    } catch { showToast('수정 실패'); }
+  }
+
+  async function deleteGbMsg(id) {
+    if (!confirm('이 메시지를 삭제할까요?')) return;
+    try {
+      await fetch(WORKER_URL + '/api/anniversary/messages', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
+        body: JSON.stringify({ id })
+      });
+      await loadGuestbookMessages();
+      showToast('삭제 완료');
+    } catch { showToast('삭제 실패'); }
   }
 }
 
