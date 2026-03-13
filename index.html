@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
 <script>
 // Howler audio pool monkey-patch: crossOrigin 설정으로 AudioContext 호환성 보장
@@ -520,13 +520,12 @@ body{
 .splash-content.slide-up{opacity:0;transform:translateY(-50px);transition:all 0.6s ease!important;pointer-events:none}
 .splash-guestbook{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;padding:48px 24px 24px;opacity:0;transform:translateY(30px);pointer-events:none;transition:all 0.6s ease 0.3s;max-height:100vh;max-height:100dvh;box-sizing:border-box}
 .splash-guestbook.visible{opacity:1;transform:translateY(0);pointer-events:auto}
-.guestbook-header{font-family:'Space Grotesk',monospace;font-size:16px;font-weight:600;color:#d4a45c;letter-spacing:4px;text-align:center;margin-bottom:20px;text-transform:uppercase}
+.guestbook-header{font-family:'Noto Serif KR',Georgia,'Times New Roman',serif;font-size:20px;font-weight:600;color:#d4a45c;letter-spacing:2px;text-align:center;margin-bottom:20px}
 .guestbook-form{display:flex;flex-direction:column;gap:10px;flex-shrink:0}
 .guestbook-input{background:rgba(212,164,92,0.08);border:1px solid rgba(212,164,92,0.2);border-radius:12px;color:#ece4d8;padding:10px 14px;font-size:14px;width:100%;box-sizing:border-box;outline:none;transition:border-color 0.3s;font-family:inherit}
 .guestbook-input:focus{border-color:rgba(212,164,92,0.5)}
 .guestbook-input::placeholder{color:rgba(212,164,92,0.3)}
-.guestbook-name{max-width:160px}
-.guestbook-text{resize:none;min-height:52px;line-height:1.5}
+.guestbook-text{resize:none;min-height:64px;line-height:1.5}
 .guestbook-textarea-wrap{position:relative}
 .guestbook-charcount{position:absolute;right:10px;bottom:8px;font-size:11px;color:rgba(212,164,92,0.3);pointer-events:none}
 .guestbook-divider{width:100%;height:1px;margin:16px 0;background:linear-gradient(90deg,transparent,rgba(212,164,92,0.25),transparent);flex-shrink:0}
@@ -536,9 +535,7 @@ body{
 .guestbook-list::-webkit-scrollbar-thumb{background:rgba(212,164,92,0.2);border-radius:3px}
 .guestbook-item{background:rgba(212,164,92,0.05);border:1px solid rgba(212,164,92,0.1);border-radius:12px;padding:12px 14px;opacity:0;transform:translateY(8px);animation:gbItemIn 0.4s ease forwards}
 @keyframes gbItemIn{to{opacity:1;transform:translateY(0)}}
-.guestbook-item-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.guestbook-item-name{font-family:'Space Grotesk',monospace;font-size:12px;font-weight:600;color:#d4a45c}
-.guestbook-item-time{font-size:11px;color:#9a9494}
+.guestbook-item-time{font-size:11px;color:#9a9494;text-align:right;margin-top:4px}
 .guestbook-item-text{font-size:13px;color:#ece4d8;line-height:1.6;word-break:break-word}
 .guestbook-empty{text-align:center;color:rgba(212,164,92,0.35);font-size:13px;padding:24px 0}
 .guestbook-enter-btn{flex-shrink:0;margin-top:16px;opacity:1!important;transform:none!important;transition:background 0.3s,border-color 0.3s!important}
@@ -568,9 +565,8 @@ body{
   <div class="splash-guestbook" id="splashGuestbook">
     <div class="guestbook-header">함께 축하해요</div>
     <div class="guestbook-form">
-      <input type="text" id="guestName" class="guestbook-input guestbook-name" placeholder="이름 (선택)" maxlength="10">
       <div class="guestbook-textarea-wrap">
-        <textarea id="guestText" class="guestbook-input guestbook-text" placeholder="축하 메시지를 남겨주세요" maxlength="200" rows="2"></textarea>
+        <textarea id="guestText" class="guestbook-input guestbook-text" placeholder="축하 메시지 — 성함 을 남겨주세요" maxlength="200" rows="3"></textarea>
         <span class="guestbook-charcount" id="guestCharCount">0/200</span>
       </div>
     </div>
@@ -4632,11 +4628,8 @@ function initAnniversarySplash() {
       div.className = 'guestbook-item';
       div.style.animationDelay = (i * 0.05) + 's';
       div.innerHTML =
-        '<div class="guestbook-item-head">' +
-          '<span class="guestbook-item-name">' + escHtml(m.name) + '</span>' +
-          '<span class="guestbook-item-time">' + relTime(m.createdAt) + '</span>' +
-        '</div>' +
-        '<div class="guestbook-item-text">' + escHtml(m.text) + '</div>';
+        '<div class="guestbook-item-text">' + escHtml(m.text) + '</div>' +
+        '<div class="guestbook-item-time">' + relTime(m.createdAt) + '</div>';
       list.appendChild(div);
     });
   }
@@ -4655,7 +4648,6 @@ function initAnniversarySplash() {
 
   async function submitAndEnter() {
     const text = ($('guestText').value || '').trim();
-    const name = ($('guestName').value || '').trim();
     if (text) {
       // 메시지가 있으면 저장 후 진입
       const btn = $('guestbookEnterBtn');
@@ -4665,7 +4657,7 @@ function initAnniversarySplash() {
         const res = await fetch(WORKER_URL + '/api/anniversary/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name || '익명', text })
+          body: JSON.stringify({ text })
         });
         const data = await res.json();
         if (data.error) showToast(data.error);
