@@ -4579,9 +4579,6 @@ function isAnniversaryPeriod() {
 }
 
 function shouldShowSplash() {
-  // 공유 링크로 들어온 경우 스플래시 생략
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('ch') && params.get('track')) return false;
   const now = new Date();
   // 3/15~3/17 기념 주간: 앱 실행할 때마다 표시
   if (now >= ANNIV_PEAK_START && now <= ANNIV_PEAK_END) return true;
