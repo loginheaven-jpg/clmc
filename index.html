@@ -543,6 +543,9 @@ body{
 .guestbook-item-text{font-size:13px;color:#ece4d8;line-height:1.6;word-break:break-word}
 .guestbook-empty{text-align:center;color:rgba(212,164,92,0.35);font-size:13px;padding:24px 0}
 .guestbook-enter-btn{flex-shrink:0;margin-top:16px;opacity:1!important;transform:none!important;transition:background 0.3s,border-color 0.3s!important}
+.gb-save-btn{flex-shrink:0;margin-top:12px;padding:10px 24px;border-radius:20px;border:1px solid rgba(212,164,92,0.5);background:rgba(212,164,92,0.18);color:#d4a45c;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:1px;width:100%;transition:background 0.3s,border-color 0.3s,opacity 0.3s}
+.gb-save-btn:hover:not(:disabled){background:rgba(212,164,92,0.32);border-color:rgba(212,164,92,0.8)}
+.gb-save-btn:disabled{opacity:0.55;cursor:default}
 </style>
 </head>
 <body>
@@ -570,7 +573,7 @@ body{
     <div class="guestbook-header">함께 축하해요</div>
     <div class="guestbook-form">
       <div class="guestbook-textarea-wrap">
-        <textarea id="guestText" class="guestbook-input guestbook-text" placeholder="축하 메시지 — 성함 을 남겨주세요" maxlength="200" rows="3"></textarea>
+        <textarea id="guestText" class="guestbook-input guestbook-text" placeholder="축하메시지-성함  을 남겨 주시고 예봄라디오시작하기 버튼을 눌러 주세요." maxlength="200" rows="3"></textarea>
         <span class="guestbook-charcount" id="guestCharCount">0/200</span>
       </div>
     </div>
@@ -578,6 +581,7 @@ body{
     <div class="guestbook-list" id="guestbookList">
       <div class="guestbook-empty">메시지를 불러오는 중...</div>
     </div>
+    <button class="gb-save-btn" id="guestSaveBtn">메시지 저장하기</button>
     <button class="splash-enter-btn guestbook-enter-btn" id="guestbookEnterBtn">예봄라디오 시작하기</button>
   </div>
 </div>
@@ -4605,18 +4609,56 @@ function openGuestbookPopup() {
     '<div class="splash-guestbook visible" style="opacity:1;transform:none;pointer-events:auto">' +
       '<div class="guestbook-header">함께 축하해요</div>' +
       '<div class="guestbook-form"><div class="guestbook-textarea-wrap">' +
-        '<textarea id="gbPopupText" class="guestbook-input guestbook-text" placeholder="축하 메시지 — 성함 을 남겨주세요" maxlength="200" rows="3"></textarea>' +
+        '<textarea id="gbPopupText" class="guestbook-input guestbook-text" placeholder="축하메시지-성함  을 남겨 주시고 예봄라디오시작하기 버튼을 눌러 주세요." maxlength="200" rows="3"></textarea>' +
         '<span class="guestbook-charcount" id="gbPopupCharCount">0/200</span>' +
       '</div></div>' +
       '<div class="guestbook-divider"></div>' +
       '<div class="guestbook-list" id="gbPopupList"><div class="guestbook-empty">불러오는 중...</div></div>' +
+      '<button class="gb-save-btn" id="gbPopupSaveBtn">메시지 저장하기</button>' +
       '<button class="splash-enter-btn guestbook-enter-btn" id="gbPopupEnterBtn">닫기</button>' +
     '</div>';
   document.body.appendChild(overlay);
   runConfetti($('gbPopupConfetti'));
-  // 글자수 카운터
+  let gbPopupSaved = false;
+  // 임시 메시지 복원 (localStorage)
+  const gbDraft = localStorage.getItem('gb_draft');
+  if (gbDraft) { $('gbPopupText').value = gbDraft; $('gbPopupCharCount').textContent = gbDraft.length + '/200'; }
+  // 글자수 카운터 + localStorage 자동저장
   $('gbPopupText').addEventListener('input', () => {
-    $('gbPopupCharCount').textContent = $('gbPopupText').value.length + '/200';
+    const val = $('gbPopupText').value;
+    $('gbPopupCharCount').textContent = val.length + '/200';
+    if (val.trim()) localStorage.setItem('gb_draft', val); else localStorage.removeItem('gb_draft');
+    // 저장 후 수정하면 버튼 초기화
+    if (gbPopupSaved) { gbPopupSaved = false; $('gbPopupSaveBtn').textContent = '메시지 저장하기'; $('gbPopupSaveBtn').disabled = false; }
+  });
+  // "메시지 저장하기" 버튼
+  $('gbPopupSaveBtn').addEventListener('click', async () => {
+    const text = ($('gbPopupText').value || '').trim();
+    if (!text) { showToast('메시지를 입력해주세요'); return; }
+    const btn = $('gbPopupSaveBtn');
+    btn.textContent = '저장 중...'; btn.disabled = true;
+    try {
+      const res = await fetch(WORKER_URL + '/api/anniversary/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const d = await res.json();
+      if (d.error) {
+        showToast(d.error); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+      } else {
+        localStorage.removeItem('gb_draft');
+        gbPopupSaved = true; btn.textContent = '저장됨 ✓';
+        $('gbPopupText').value = ''; $('gbPopupCharCount').textContent = '0/200';
+        showToast('축하 메시지가 등록되었습니다!');
+        // 목록 새로고침
+        try {
+          const r2 = await fetch(WORKER_URL + '/api/anniversary/messages');
+          renderGbPopup((await r2.json()).messages || []);
+        } catch {}
+      }
+    } catch {
+      showToast('전송 실패'); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+    }
   });
   // 메시지 로드
   (async () => {
@@ -4626,21 +4668,8 @@ function openGuestbookPopup() {
       renderGbPopup(data.messages || []);
     } catch { renderGbPopup([]); }
   })();
-  // 닫기 (메시지 있으면 저장)
-  $('gbPopupEnterBtn').addEventListener('click', async () => {
-    const text = ($('gbPopupText').value || '').trim();
-    if (text) {
-      $('gbPopupEnterBtn').textContent = '저장 중...';
-      $('gbPopupEnterBtn').disabled = true;
-      try {
-        const res = await fetch(WORKER_URL + '/api/anniversary/messages', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        const d = await res.json();
-        if (d.error) showToast(d.error); else showToast('축하 메시지가 등록되었습니다!');
-      } catch { showToast('전송 실패'); }
-    }
+  // 닫기 — 그냥 닫기만 (저장은 저장 버튼으로)
+  $('gbPopupEnterBtn').addEventListener('click', () => {
     overlay.classList.add('fade-out');
     setTimeout(() => overlay.remove(), 900);
   });
@@ -4698,6 +4727,7 @@ function initAnniversarySplash() {
   }
   requestAnimationFrame(() => { splash.classList.add('visible'); });
   runConfetti($('confettiCanvas'));
+  let gbSaved = false;
   // "축하 메시지 남기기" → 축하 패널 열기 (자동 닫기 없음)
   $('splashEnterBtn').addEventListener('click', () => showGuestbook());
   // "예봄라디오 시작하기" (축하 패널 하단)
@@ -4715,9 +4745,41 @@ function initAnniversarySplash() {
     // 축하 패널 페이드인
     const gb = $('splashGuestbook');
     setTimeout(() => gb.classList.add('visible'), 300);
-    // 글자수 카운터
+    // 임시 메시지 복원 (localStorage)
+    const savedDraft = localStorage.getItem('gb_draft');
+    if (savedDraft) { $('guestText').value = savedDraft; $('guestCharCount').textContent = savedDraft.length + '/200'; }
+    // 글자수 카운터 + localStorage 자동저장
     $('guestText').addEventListener('input', () => {
-      $('guestCharCount').textContent = $('guestText').value.length + '/200';
+      const val = $('guestText').value;
+      $('guestCharCount').textContent = val.length + '/200';
+      if (val.trim()) localStorage.setItem('gb_draft', val); else localStorage.removeItem('gb_draft');
+      // 저장 후 수정하면 버튼 초기화
+      if (gbSaved) { gbSaved = false; $('guestSaveBtn').textContent = '메시지 저장하기'; $('guestSaveBtn').disabled = false; }
+    });
+    // "메시지 저장하기" 버튼
+    $('guestSaveBtn').addEventListener('click', async () => {
+      const text = ($('guestText').value || '').trim();
+      if (!text) { showToast('메시지를 입력해주세요'); return; }
+      const btn = $('guestSaveBtn');
+      btn.textContent = '저장 중...'; btn.disabled = true;
+      try {
+        const res = await fetch(WORKER_URL + '/api/anniversary/messages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.error) {
+          showToast(data.error); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+        } else {
+          localStorage.removeItem('gb_draft');
+          gbSaved = true; btn.textContent = '저장됨 ✓';
+          $('guestText').value = ''; $('guestCharCount').textContent = '0/200';
+          showToast('축하 메시지가 등록되었습니다!');
+          await loadGuestbookMessages();
+        }
+      } catch {
+        showToast('전송 실패'); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+      }
     });
     // 메시지 목록 로드
     await loadGuestbookMessages();
@@ -4780,9 +4842,11 @@ function initAnniversarySplash() {
   }
 
   async function submitAndEnter() {
+    // 이미 저장 버튼으로 저장했으면 바로 닫기
+    if (gbSaved) { dismissSplash(); return; }
     const text = ($('guestText').value || '').trim();
     if (text) {
-      // 메시지가 있으면 저장 후 진입
+      // 저장 버튼을 누르지 않고 시작하기를 누른 경우 — 저장 후 진입
       const btn = $('guestbookEnterBtn');
       btn.textContent = '저장 중...';
       btn.disabled = true;
@@ -4793,13 +4857,18 @@ function initAnniversarySplash() {
           body: JSON.stringify({ text })
         });
         const data = await res.json();
-        if (data.error) showToast(data.error);
-        else showToast('축하 메시지가 등록되었습니다!');
+        if (data.error) {
+          showToast(data.error);
+          btn.textContent = '예봄라디오 시작하기'; btn.disabled = false;
+          return;
+        }
+        localStorage.removeItem('gb_draft');
+        showToast('축하 메시지가 등록되었습니다!');
       } catch {
         showToast('전송 실패 — 다시 시도해주세요');
         btn.textContent = '예봄라디오 시작하기';
         btn.disabled = false;
-        return; // 실패 시 닫지 않음
+        return;
       }
     }
     dismissSplash();

@@ -411,6 +411,19 @@ export default {
         await env.RADIO_KV.put('anniversary:messages', JSON.stringify(messages));
         return json({ ok: true, message: msg }, cors);
       }
+      // 축하 메시지 임시저장 (draft upsert)
+      if (path === '/api/anniversary/draft' && method === 'PATCH') {
+        const body = await request.json();
+        const text = (body.text || '').trim().slice(0, 200);
+        const sid = (body.sid || '').replace(/[^a-z0-9]/gi, '').slice(0, 40);
+        if (!sid) return json({ error: 'sid 필수' }, cors, 400);
+        if (text) {
+          await env.RADIO_KV.put('anniversary:draft:' + sid, text, { expirationTtl: 86400 * 7 });
+        } else {
+          await env.RADIO_KV.delete('anniversary:draft:' + sid);
+        }
+        return json({ ok: true }, cors);
+      }
       // 축하 메시지 수정 (관리자 전용)
       if (path === '/api/anniversary/messages' && method === 'PUT') {
         if (!isAdmin(request, env)) return json({ error: 'Unauthorized' }, cors, 401);
