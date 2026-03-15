@@ -528,7 +528,7 @@ body{
 .guestbook-input::placeholder{color:rgba(212,164,92,0.3)}
 .guestbook-text{resize:none;min-height:64px;line-height:1.5}
 .guestbook-textarea-wrap{position:relative}
-.gb-form-footer{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+.gb-form-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:6px}
 .guestbook-charcount{font-size:11px;color:rgba(212,164,92,0.3);pointer-events:none}
 .guestbook-divider{width:100%;height:1px;margin:16px 0;background:linear-gradient(90deg,transparent,rgba(212,164,92,0.25),transparent);flex-shrink:0}
 .guestbook-list{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px;-webkit-overflow-scrolling:touch}
@@ -578,7 +578,7 @@ body{
         <textarea id="guestText" class="guestbook-input guestbook-text" placeholder="축하메시지-성함  을 남겨 주시고 예봄라디오시작하기 버튼을 눌러 주세요." maxlength="200" rows="3"></textarea>
         <div class="gb-form-footer">
           <span class="guestbook-charcount" id="guestCharCount">0/200</span>
-          <button class="gb-save-btn" id="guestSaveBtn">메시지 저장하기</button>
+          <button class="gb-save-btn" id="guestSaveBtn">저장</button>
         </div>
       </div>
     </div>
@@ -4634,7 +4634,7 @@ function openGuestbookPopup() {
         '<textarea id="gbPopupText" class="guestbook-input guestbook-text" placeholder="축하메시지-성함  을 남겨 주시고 예봄라디오시작하기 버튼을 눌러 주세요." maxlength="200" rows="3"></textarea>' +
         '<div class="gb-form-footer">' +
           '<span class="guestbook-charcount" id="gbPopupCharCount">0/200</span>' +
-          '<button class="gb-save-btn" id="gbPopupSaveBtn">메시지 저장하기</button>' +
+          '<button class="gb-save-btn" id="gbPopupSaveBtn">저장</button>' +
         '</div>' +
       '</div></div>' +
       '<div class="guestbook-divider"></div>' +
@@ -4653,9 +4653,9 @@ function openGuestbookPopup() {
     $('gbPopupCharCount').textContent = val.length + '/200';
     if (val.trim()) localStorage.setItem('gb_draft', val); else localStorage.removeItem('gb_draft');
     // 저장 후 수정하면 버튼 초기화
-    if (gbPopupSaved) { gbPopupSaved = false; $('gbPopupSaveBtn').textContent = '메시지 저장하기'; $('gbPopupSaveBtn').disabled = false; }
+    if (gbPopupSaved) { gbPopupSaved = false; $('gbPopupSaveBtn').textContent = '저장'; $('gbPopupSaveBtn').disabled = false; }
   });
-  // "메시지 저장하기" 버튼
+  // "저장" 버튼
   $('gbPopupSaveBtn').addEventListener('click', async () => {
     const text = ($('gbPopupText').value || '').trim();
     if (!text) { showToast('메시지를 입력해주세요'); return; }
@@ -4668,7 +4668,7 @@ function openGuestbookPopup() {
       });
       const d = await res.json();
       if (d.error) {
-        showToast(d.error); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+        showToast(d.error); btn.textContent = '저장'; btn.disabled = false;
       } else {
         localStorage.removeItem('gb_draft');
         gbPopupSaved = true; btn.textContent = '저장됨 ✓';
@@ -4681,7 +4681,7 @@ function openGuestbookPopup() {
         } catch {}
       }
     } catch {
-      showToast('전송 실패'); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+      showToast('전송 실패'); btn.textContent = '저장'; btn.disabled = false;
     }
   });
   // 메시지 로드
@@ -4778,9 +4778,9 @@ function initAnniversarySplash() {
       $('guestCharCount').textContent = val.length + '/200';
       if (val.trim()) localStorage.setItem('gb_draft', val); else localStorage.removeItem('gb_draft');
       // 저장 후 수정하면 버튼 초기화
-      if (gbSaved) { gbSaved = false; $('guestSaveBtn').textContent = '메시지 저장하기'; $('guestSaveBtn').disabled = false; }
+      if (gbSaved) { gbSaved = false; $('guestSaveBtn').textContent = '저장'; $('guestSaveBtn').disabled = false; }
     });
-    // "메시지 저장하기" 버튼
+    // "저장" 버튼
     $('guestSaveBtn').addEventListener('click', async () => {
       const text = ($('guestText').value || '').trim();
       if (!text) { showToast('메시지를 입력해주세요'); return; }
@@ -4793,7 +4793,7 @@ function initAnniversarySplash() {
         });
         const data = await res.json();
         if (data.error) {
-          showToast(data.error); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+          showToast(data.error); btn.textContent = '저장'; btn.disabled = false;
         } else {
           localStorage.removeItem('gb_draft');
           gbSaved = true; btn.textContent = '저장됨 ✓';
@@ -4802,7 +4802,7 @@ function initAnniversarySplash() {
           await loadGuestbookMessages();
         }
       } catch {
-        showToast('전송 실패'); btn.textContent = '메시지 저장하기'; btn.disabled = false;
+        showToast('전송 실패'); btn.textContent = '저장'; btn.disabled = false;
       }
     });
     // 메시지 목록 로드
