@@ -477,6 +477,20 @@ body{
 .pwa-prompt-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:700;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
 .pwa-prompt-modal.open{display:flex;animation:fadeIn 0.3s ease}
 .pwa-prompt-box{background:var(--bg-mid);border:1px solid var(--border-glass);border-radius:24px 24px 16px 16px;padding:28px 24px 20px;width:100%;max-width:420px;text-align:center}
+/* Android 설치 가이드 오버레이 */
+.install-guide-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85)}
+.install-guide-overlay.open{display:block;animation:fadeIn 0.3s ease}
+.install-guide-arrow{position:fixed;top:6px;right:38px;z-index:10000;animation:bounceArrow 1s ease infinite}
+.install-guide-arrow svg{filter:drop-shadow(0 0 8px rgba(212,164,92,0.6))}
+@keyframes bounceArrow{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.install-guide-steps{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;text-align:center;width:280px}
+.install-guide-step{display:flex;align-items:center;gap:12px;margin-bottom:20px;text-align:left}
+.install-guide-num{flex-shrink:0;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#d4a45c,#c48a6a);color:#1a1a2e;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center}
+.install-guide-text{font-size:15px;color:var(--text);line-height:1.5}
+.install-guide-text b{color:var(--accent);font-weight:700}
+.install-guide-dots{font-size:32px;letter-spacing:4px;color:var(--accent);font-weight:900;display:inline-block;background:var(--bg-mid);border:1px solid var(--border-glass);border-radius:10px;padding:4px 14px;margin-bottom:4px}
+.install-guide-close{margin-top:24px;padding:12px 36px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.07);color:var(--text);font-size:14px;cursor:pointer}
+.install-guide-close:active{opacity:0.7}
 .pwa-prompt-icon{font-size:2.8rem;margin-bottom:10px;line-height:1}
 .pwa-prompt-title{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:var(--text)}
 .pwa-prompt-desc{font-size:0.85rem;color:var(--text-dim);line-height:1.7;margin-bottom:20px}
@@ -947,6 +961,28 @@ body{
 <div class="setup-modal" id="setupModal"><div class="auth-box"><h3>Workers URL 설정</h3><input type="url" id="setupInput" placeholder="https://radio-worker.xxx.workers.dev"><button id="setupSubmit">저장</button></div></div>
 <div class="toast" id="toast"></div>
 <div class="ios-guide-modal" id="iosGuideModal"><div class="ios-guide-box"><h3>홈 화면에 추가</h3><p>Safari 하단의 <strong>공유 버튼</strong> (⬆) 을 탭한 후<br><strong>"홈 화면에 추가"</strong>를 선택하세요.</p><button class="ios-guide-close" id="iosGuideClose">확인</button></div></div>
+
+<!-- Android 설치 시각 가이드 -->
+<div class="install-guide-overlay" id="installGuide">
+  <div class="install-guide-arrow">
+    <svg width="48" height="48" viewBox="0 0 48 48"><path d="M24 4 L24 32 M14 22 L24 32 L34 22" stroke="#d4a45c" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div class="install-guide-steps">
+    <div class="install-guide-step">
+      <div class="install-guide-num">1</div>
+      <div class="install-guide-text">화면 오른쪽 위<br><span class="install-guide-dots">⋮</span> 을 누르세요</div>
+    </div>
+    <div class="install-guide-step">
+      <div class="install-guide-num">2</div>
+      <div class="install-guide-text"><b>"홈 화면에 추가"</b> 또는<br><b>"앱 설치"</b>를 선택하세요</div>
+    </div>
+    <div class="install-guide-step">
+      <div class="install-guide-num">3</div>
+      <div class="install-guide-text"><b>"설치"</b>를 누르면 완료!</div>
+    </div>
+    <button class="install-guide-close" id="installGuideClose">닫기</button>
+  </div>
+</div>
 
 <div class="pwa-prompt-modal" id="pwaPromptModal">
   <div class="pwa-prompt-box">
@@ -4575,13 +4611,21 @@ async function initPwa() {
       if (r.outcome === 'accepted') { hideInstallBtn(); $('pwaPromptModal').classList.remove('open'); }
       deferredInstallPrompt = null;
     } else {
-      // beforeinstallprompt 미지원 브라우저 (Samsung Internet, Firefox 등)
-      showToast('브라우저 메뉴 → "홈 화면에 추가"를 선택하세요', 5000);
+      // 자동 설치 불가 → 시각적 가이드 표시
+      const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+      const arrow = $('installGuide').querySelector('.install-guide-arrow');
+      if (isSamsung) {
+        // 삼성 인터넷: 메뉴가 하단 오른쪽 ≡
+        arrow.style.cssText = 'position:fixed;bottom:10px;right:20px;top:auto;transform:rotate(180deg)';
+      }
+      $('installGuide').classList.add('open');
     }
   };
 
   installBtn.addEventListener('click', doInstall);
   $('iosGuideClose').addEventListener('click', () => $('iosGuideModal').classList.remove('open'));
+  $('installGuideClose').addEventListener('click', () => $('installGuide').classList.remove('open'));
+  $('installGuide').addEventListener('click', e => { if (e.target === $('installGuide')) $('installGuide').classList.remove('open'); });
 
   // 인앱 브라우저에서 리다이렉트되어 온 경우 감지
   const fromInApp = new URLSearchParams(location.search).get('pwa') === '1';
