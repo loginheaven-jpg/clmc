@@ -4518,48 +4518,37 @@ function detectInAppBrowser() {
 
 function initInAppBanner() {
   if (!detectInAppBrowser()) return;
-  const banner = $('inappBanner');
-  if (!banner) return;
-  // 세션 내에서 닫은 적 있으면 표시 안 함
-  if (sessionStorage.getItem('inapp-banner-dismissed')) return;
-  const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const url = location.href;
   const isAndroid = /Android/i.test(navigator.userAgent);
-  const browserName = isIosDevice ? 'Safari' : 'Chrome';
 
-  // 플랫폼별 텍스트 맞춤
-  $('inappBannerText').innerHTML = '지금 <b>카카오톡/네이버 내장 브라우저</b>로 보고 있어요.<br>앱 설치와 안정적인 재생을 위해 ' + browserName + '에서 열어주세요.';
-  $('inappOpenChrome').textContent = browserName + '에서 열기';
+  if (isAndroid) {
+    // Android: intent:// 스킴으로 Chrome 강제 실행
+    location.href = 'intent://' + url.replace(/^https?:\/\//, '') +
+      '#Intent;scheme=https;package=com.android.chrome;' +
+      'S.browser_fallback_url=' + encodeURIComponent(url) + ';end';
+    return;
+  }
 
-  banner.style.display = 'block';
-
-  $('inappOpenChrome').addEventListener('click', () => {
-    const url = location.href;
-    if (isAndroid) {
-      // Android: intent:// 스킴으로 Chrome 직접 실행
-      const intentUrl = 'intent://' + url.replace(/^https?:\/\//, '') +
-        '#Intent;scheme=https;package=com.android.chrome;' +
-        'S.browser_fallback_url=' + encodeURIComponent(url) + ';end';
-      location.href = intentUrl;
-    } else if (isIosDevice) {
-      // iOS: Safari에서 직접 열기 시도 (x-safari 미지원 시 클립보드 안내)
-      // 카카오톡은 외부 브라우저 열기를 window.open으로 지원
-      const opened = window.open(url, '_blank');
-      if (!opened) {
-        navigator.clipboard.writeText(url).then(() => {
-          showToast('링크가 복사되었습니다. Safari에서 붙여넣기 해주세요.', 5000);
-        }).catch(() => {
-          prompt('아래 링크를 복사하여 Safari에서 열어주세요:', url);
-        });
-      }
-    } else {
-      window.open(url, '_blank');
-    }
-  });
-
-  $('inappBannerClose').addEventListener('click', () => {
-    banner.style.display = 'none';
-    sessionStorage.setItem('inapp-banner-dismissed', '1');
-  });
+  // iOS: Safari로 강제 전환 불가 → 배너로 안내
+  const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (isIosDevice) {
+    const banner = $('inappBanner');
+    if (!banner || sessionStorage.getItem('inapp-banner-dismissed')) return;
+    $('inappBannerText').innerHTML = '지금 <b>내장 브라우저</b>로 보고 있어요.<br>앱 설치를 위해 Safari에서 열어주세요.';
+    $('inappOpenChrome').textContent = 'Safari에서 열기';
+    banner.style.display = 'block';
+    $('inappOpenChrome').addEventListener('click', () => {
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('링크가 복사되었습니다. Safari에서 붙여넣기 해주세요.', 5000);
+      }).catch(() => {
+        prompt('아래 링크를 복사하여 Safari에서 열어주세요:', url);
+      });
+    });
+    $('inappBannerClose').addEventListener('click', () => {
+      banner.style.display = 'none';
+      sessionStorage.setItem('inapp-banner-dismissed', '1');
+    });
+  }
 }
 
 async function initPwa() {
