@@ -4529,25 +4529,15 @@ function initInAppBanner() {
     return;
   }
 
-  // iOS: Safari로 강제 전환 불가 → 배너로 안내
+  // iOS: confirm 후 Safari로 열기
   const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   if (isIosDevice) {
-    const banner = $('inappBanner');
-    if (!banner || sessionStorage.getItem('inapp-banner-dismissed')) return;
-    $('inappBannerText').innerHTML = '지금 <b>내장 브라우저</b>로 보고 있어요.<br>앱 설치를 위해 Safari에서 열어주세요.';
-    $('inappOpenChrome').textContent = 'Safari에서 열기';
-    banner.style.display = 'block';
-    $('inappOpenChrome').addEventListener('click', () => {
-      navigator.clipboard.writeText(url).then(() => {
-        showToast('링크가 복사되었습니다. Safari에서 붙여넣기 해주세요.', 5000);
-      }).catch(() => {
-        prompt('아래 링크를 복사하여 Safari에서 열어주세요:', url);
-      });
-    });
-    $('inappBannerClose').addEventListener('click', () => {
-      banner.style.display = 'none';
+    if (sessionStorage.getItem('inapp-banner-dismissed')) return;
+    if (confirm('앱 설치를 위해 Safari에서 여시겠습니까?')) {
+      window.open(url, '_blank');
+    } else {
       sessionStorage.setItem('inapp-banner-dismissed', '1');
-    });
+    }
   }
 }
 
