@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.yebom.radio",
+    "sha256_cert_fingerprints": [
+      "6A:D6:7D:13:AC:63:EF:2C:FA:18:26:01:84:CF:C0:6F:FE:1F:17:98:77:9F:54:78:E8:63:E5:9B:9D:EA:0E:D6"
+    ]
+  }
+}]
