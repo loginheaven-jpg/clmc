@@ -3838,7 +3838,7 @@ async function orOpenFolder(folderName) {
   orSearchCount.textContent = '';
   await orLoadTracks(folderName);
   orRenderTrackList();
-  orUploadBtn.style.display = radioUser ? '' : 'none';
+  orUploadBtn.style.display = (radioUser || adminKey) ? '' : 'none';
 }
 
 async function orAutoPlayFolder(folderName) {
