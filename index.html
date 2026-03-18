@@ -1693,6 +1693,10 @@ function updatePlayBtn(playing) {
 }
 
 function stopPlayback() {
+  // 이전 트랙 재생위치 즉시 저장 (세대 번호 증가 전에!)
+  if (currentTrackKey && currentHowl && isPlaying) {
+    saveResume(currentChannel);
+  }
   playTrackGeneration++; // 진행 중인 비동기 재생 무효화
   stopHls();
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
@@ -2063,6 +2067,10 @@ function playTrack(channel, trackIndex, startPosition = 0) {
   const tracks = channelTracks[channel];
   if (!tracks || trackIndex >= tracks.length) return;
   const track = tracks[trackIndex];
+  // 이전 트랙 재생위치 즉시 저장 (세대 번호 증가 전에!)
+  if (currentTrackKey && currentHowl && isPlaying) {
+    saveResume(currentChannel);
+  }
   const gen = ++playTrackGeneration; // 이 호출의 세대 번호
   stopHls();
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
