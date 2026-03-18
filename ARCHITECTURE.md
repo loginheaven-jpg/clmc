@@ -104,6 +104,8 @@ c:\dev\radio\
 | POST | `/api/identify` | 곡명 인식 (HLS 세그먼트 3개 병합 → ACRCloud 핑거프린팅) | 없음 |
 | GET | `/api/channel-config` | 서버 채널 설정 조회 (order, hidden, defaultChannel) | 없음 |
 | PUT | `/api/channel-config` | 서버 채널 설정 저장 | `Bearer ADMIN_KEY` |
+| GET | `/api/user/trackpos` | CH3 트랙별 재생위치 조회 | `X-User-Id` |
+| PUT | `/api/user/trackpos` | CH3 트랙별 재생위치 저장 (ts 병합) | `X-User-Id` |
 
 ### HLS 프록시 화이트리스트
 `gscdn.kbs.co.kr`, `kbs.co.kr`, `febc.net`, `mlive2.febc.net`
@@ -154,7 +156,7 @@ coachdb-files/
 ## 6. KV 데이터
 
 - **바인딩**: `RADIO_KV` (ID: `c4c08099c81c4860a0184e7c29562434`)
-- **키**: `ch5_state`
+- **주요 키**: `ch5_state`, `live_state`, `live_config`, `channel-config`, `anniversary:messages`, `user:trackpos:{userId}`, `openroom:*`
 
 ### `ch5_state` 구조
 ```json
@@ -466,11 +468,42 @@ playTrack(channel, trackIndex, startPosition)
 
 ### 9.3 이어듣기 (CH3, CH4)
 
-- **저장**: 4중 트리거 — `setInterval(5초)` + `beforeunload` + `pagehide` + `visibilitychange`
+- **저장**: 5중 트리거 — `setInterval(5초)` + `beforeunload` + `pagehide` + `visibilitychange` + 트랙/채널 전환 직전
 - **localStorage 키**: `radio-ch3-resume`, `radio-ch4-resume`
 - **저장 데이터**: `{ trackKey, trackName, position, savedAt }`
 - **복원 조건**: 7일 이내 + R2에 파일 존재 확인
 - **최소 위치**: `position < 3`이면 저장하지 않음 (시작 직후 닫기 시 무시)
+
+#### 9.3.1 트랙별 재생위치 (CH3 전용)
+
+사용자가 트랙을 선택하면 저장된 위치에서 이어듣기. 자동 재생(순차/랜덤)은 처음부터.
+
+- **localStorage 키**: `radio-ch3-trackpos`
+- **형식**: `{ "radio/channel-list1/파일.mp3": { pos: 125.3, ts: 1710000000000 }, ... }`
+- **만료**: 30일 (`TRACK_POS_MAX_AGE`), 끝까지 들으면 즉시 초기화
+- **저장 시점**: `saveResume()` 호출 시 CH3이면 `saveTrackPosition()` 동시 호출
+
+#### 9.3.2 서버 동기화 (로그인 사용자)
+
+로그인 사용자는 트랙별 재생위치를 KV에 동기화하여 **다른 기기에서도 이어듣기** 가능.
+
+**아키텍처**:
+```
+[로컬 저장]  ← 항상 기본 (비로그인/서버 장애 시에도 동작)
+     ↕ 병합
+[KV 저장]   ← 로그인 사용자만 (user:trackpos:{userId})
+```
+
+**API**:
+- `GET /api/user/trackpos` — 서버 위치 조회 (헤더: `X-User-Id`)
+- `PUT /api/user/trackpos` — 서버 위치 저장 (본문: `{ positions: {...} }`)
+
+**동기화 전략**:
+- **서버→로컬**: 앱 시작 시 `checkSsoSession()` 성공 후 1회 fetch → ts 비교 후 최신 데이터로 병합
+- **로컬→서버**: 이벤트 기반 (트랙 전환, 채널 전환, 일시정지) + 2초 디바운스 + fire-and-forget
+- **브라우저 종료**: `navigator.sendBeacon()`으로 즉시 전송 (비차단)
+- **충돌 해결**: 양쪽 모두 ts(타임스탬프) 비교, 더 최신이 승리
+- **서버 장애**: 무시 — 로컬이 항상 fallback
 
 ### 9.4 공유 스트리밍 (CH5)
 
@@ -697,6 +730,7 @@ const nowPlayingEl = new Proxy({}, {
 | `radio-rec-threshold` | 무음 감지 임계값 (raw, /32767 변환) | `50` |
 | `radio-rec-silence-dur` | 무음 지속 시간 (ms) | `1000` |
 | `radio-user` | SSO 로그인 캐시 JSON (`{ user, ts }`, 5분 TTL) | `null` |
+| `radio-ch3-trackpos` | CH3 트랙별 재생위치 JSON (`{ trackKey: { pos, ts } }`, 30일 만료) | `{}` |
 
 ---
 
@@ -841,6 +875,7 @@ git push origin main
 | 2026-03-04 | v2.4.0 | **SSO 로그인 연동**. 녹음 기능에 로그인 게이팅 추가. 교적부(saint.yebom.org) 세션 API CORS 연동. 로그인 모달 UI. localStorage 캐시 (5분 TTL). 미로그인 시 녹음 버튼 클릭 → 로그인 팝업 → 교적부 로그인 페이지 리다이렉트. |
 | 2026-03-06 | v2.5.0 | **채널 공유 링크 + 로딩 인디케이터**. 채널명 옆 공유 아이콘으로 현재 채널+곡 URL 클립보드 복사 (`?ch=3&track=...`). URL 파라미터로 공유 링크 수신 시 해당 채널/곡 자동 재생. 채널 전환 시 재생 버튼에 회전 링 로딩 애니메이션. CH3/4/5 로딩 중 텍스트 피드백 추가. 10초 안전 타임아웃. |
 | 2026-03-06 | v2.5.1 | **채널 설정 서버 동기화**. Workers KV에 채널 설정 저장 (`GET/PUT /api/channel-config`). 관리자가 설정하면 모든 기기에 동일 적용. 프론트엔드 초기화 시 서버 설정 fetch → localStorage 동기화. 관리자 저장 시 서버에 PUT. |
+| 2026-03-18 | v2.6.0 | **오디오 스톨 자동 복구 + 트랙별 재생위치 서버 동기화**. StallWatchdog(5초 간격 currentTime 감시, 3회 연속 스톨 시 채널 재연결). HLS/Icecast/R2 에러 핸들러 강화. CH3 트랙별 재생위치 기억(사용자 선택=이어듣기, 자동재생=처음부터). 로그인 사용자는 KV(`user:trackpos:{userId}`)에 동기화하여 다기기 이어듣기. .opus 포맷 지원. 푸터 클릭 로그인/로그아웃. |
 
 ---
 

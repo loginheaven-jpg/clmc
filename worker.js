@@ -386,6 +386,36 @@ export default {
         return json({ ok: true }, cors);
       }
 
+      // ── 트랙별 재생위치 동기화 (로그인 사용자 전용) ──
+      if (path === '/api/user/trackpos' && method === 'GET') {
+        const userId = request.headers.get('X-User-Id');
+        if (!userId) return json({ error: 'Login required' }, cors, 401);
+        const raw = await env.RADIO_KV.get('user:trackpos:' + userId);
+        return json({ positions: raw ? JSON.parse(raw) : {} }, cors);
+      }
+      if (path === '/api/user/trackpos' && (method === 'PUT' || method === 'POST')) {
+        // sendBeacon은 POST + Content-Type text/plain이므로 userId를 쿼리에서도 수용
+        const userId = request.headers.get('X-User-Id') || url.searchParams.get('userId');
+        if (!userId) return json({ error: 'Login required' }, cors, 401);
+        const body = await request.json();
+        if (!body || typeof body.positions !== 'object') return json({ error: 'Invalid data' }, cors, 400);
+        // 클라이언트가 보낸 positions를 기존 데이터와 병합 (더 최신 ts 우선)
+        const kvKey = 'user:trackpos:' + userId;
+        const existing = JSON.parse(await env.RADIO_KV.get(kvKey) || '{}');
+        const merged = { ...existing };
+        for (const [trackKey, entry] of Object.entries(body.positions)) {
+          if (!existing[trackKey] || entry.ts > existing[trackKey].ts) {
+            merged[trackKey] = entry;
+          }
+        }
+        // 30일 만료 항목 정리
+        const now = Date.now();
+        const MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+        for (const k in merged) { if (now - merged[k].ts > MAX_AGE) delete merged[k]; }
+        await env.RADIO_KV.put(kvKey, JSON.stringify(merged));
+        return json({ ok: true, positions: merged }, cors);
+      }
+
       // ── 40주년 축하 메시지 ────────────────────────────────────
       if (path === '/api/anniversary/messages' && method === 'GET') {
         const raw = await env.RADIO_KV.get('anniversary:messages');
