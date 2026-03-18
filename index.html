@@ -221,6 +221,27 @@ body{
 }
 .pill-btn:hover{background:rgba(255,255,255,0.05)}
 .pill-btn.active{background:var(--accent);color:var(--bg-deep);border-color:transparent}
+/* 목록 버튼 강조: 채널 accent glow + 입장 시 pulse */
+.pill-btn.tracklist-accent{
+  color:rgba(236,228,216,0.95);border-color:var(--accent);
+  box-shadow:0 0 8px rgba(180,160,120,0.35);
+  transition:box-shadow 0.3s, border-color 0.3s, color 0.3s;
+}
+@supports (box-shadow:0 0 1px color-mix(in srgb, red 50%, transparent)){
+  .pill-btn.tracklist-accent{box-shadow:0 0 8px color-mix(in srgb, var(--accent) 35%, transparent)}
+}
+.pill-btn.tracklist-accent:hover{background:rgba(255,255,255,0.06)}
+@keyframes tracklistPulse{
+  0%,100%{box-shadow:0 0 6px rgba(180,160,120,0.3)}
+  50%{box-shadow:0 0 18px rgba(180,160,120,0.6)}
+}
+@supports (box-shadow:0 0 1px color-mix(in srgb, red 50%, transparent)){
+  @keyframes tracklistPulse{
+    0%,100%{box-shadow:0 0 6px color-mix(in srgb, var(--accent) 30%, transparent)}
+    50%{box-shadow:0 0 18px color-mix(in srgb, var(--accent) 65%, transparent)}
+  }
+}
+.pill-btn.tracklist-pulse{animation:tracklistPulse 2.5s ease-in-out 3}
 
 /* Rec Timer */
 .rec-timer-row{display:none;align-items:center;justify-content:center;margin-bottom:6px;position:relative;z-index:2}
@@ -2299,6 +2320,12 @@ async function enterChannel(channel) {
   playlistExtras.classList.toggle('visible', isPod);
   btnShuffle.style.display = (isR2 || isOpenRoom) ? '' : 'none';
   btnRepeat.style.display = (isR2 || isOpenRoom) ? '' : 'none';
+  // 목록 버튼: 파일채널 진입 시 accent glow + pulse 애니메이션
+  if (isPod) {
+    btnTrackList.classList.add('tracklist-accent', 'tracklist-pulse');
+  } else {
+    btnTrackList.classList.remove('tracklist-accent', 'tracklist-pulse');
+  }
 
   seekFill.style.width = '0%';
   timePos.textContent = '0:00';
@@ -3319,6 +3346,8 @@ async function loadPastBroadcasts() {
   } catch {}
 }
 function openTrackPanel() {
+  // 목록 열면 pulse 애니메이션 중지 (glow는 유지)
+  btnTrackList.classList.remove('tracklist-pulse');
   if (currentChannel === 7) {
     // CH7: 항상 폴더 리스트 뷰로 열기
     orFolderView.style.display = '';
