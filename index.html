@@ -1063,8 +1063,8 @@ async function checkSsoSession() {
         radioUser = data.user;
         localStorage.setItem('radio-user', JSON.stringify({ user: data.user, ts: Date.now() }));
         updateFooterLogin();
-        // 로그인 확인 후 서버 트랙 위치 병합 (비차단)
-        fetchAndMergeServerTrackPos();
+        // 로그인 확인 후 서버 트랙 위치 병합
+        serverTrackPosFetchPromise = fetchAndMergeServerTrackPos();
         return true;
       }
     }
@@ -2560,11 +2560,23 @@ function saveResume(channel) {
   if (!currentTrackKey) return;
   const position = currentHowl ? Math.round(currentHowl.seek() * 10) / 10 : 0;
   if (position < 3) return;
-  localStorage.setItem('radio-ch'+channel+'-resume', JSON.stringify({trackKey:currentTrackKey, trackName:currentTrackName, position, savedAt:Date.now()}));
+  const now = Date.now();
+  localStorage.setItem('radio-ch'+channel+'-resume', JSON.stringify({trackKey:currentTrackKey, trackName:currentTrackName, position, savedAt:now}));
   // 트랙별 재생위치 저장 (말씀의 전당 CH3 전용)
-  if (channel === 3) saveTrackPosition(currentTrackKey, position);
+  if (channel === 3) {
+    saveTrackPosition(currentTrackKey, position);
+    // 채널 이어듣기 정보도 서버 동기화 대상에 포함
+    const data = loadTrackPositions();
+    data['__ch3_resume'] = { trackKey: currentTrackKey, trackName: currentTrackName, pos: position, ts: now };
+    localStorage.setItem(TRACK_POS_KEY, JSON.stringify(data));
+    markTrackPosDirty();
+  }
 }
 async function restoreResume(channel) {
+  // 로그인 사용자: 서버 데이터 병합 완료를 기다림 (최대 3초)
+  if (radioUser && channel === 3 && serverTrackPosFetchPromise && !serverTrackPosFetched) {
+    try { await Promise.race([serverTrackPosFetchPromise, new Promise(r => setTimeout(r, 3000))]); } catch {}
+  }
   const raw = localStorage.getItem('radio-ch'+channel+'-resume');
   if (!raw) return null;
   let resume;
@@ -2632,6 +2644,8 @@ function syncTrackPosToServer(positions) {
 }
 
 // 서버에서 트랙 위치 가져와 로컬과 병합 (앱 시작 시 1회)
+let serverTrackPosFetched = false; // 서버 데이터 병합 완료 플래그
+let serverTrackPosFetchPromise = null;
 async function fetchAndMergeServerTrackPos() {
   if (!radioUser) return;
   try {
@@ -2644,6 +2658,7 @@ async function fetchAndMergeServerTrackPos() {
     const local = loadTrackPositions();
     let changed = false;
     for (const [key, entry] of Object.entries(serverData)) {
+      if (key === '__ch3_resume') continue; // 채널 이어듣기는 별도 처리
       // 서버가 더 최신이면 로컬에 반영
       if (!local[key] || entry.ts > local[key].ts) {
         if (entry.pos > 0) { local[key] = entry; changed = true; }
@@ -2651,7 +2666,22 @@ async function fetchAndMergeServerTrackPos() {
       }
     }
     if (changed) localStorage.setItem(TRACK_POS_KEY, JSON.stringify(local));
+    // 채널 이어듣기 정보 병합: 서버가 더 최신이면 로컬 radio-ch3-resume 갱신
+    const serverResume = serverData['__ch3_resume'];
+    if (serverResume && serverResume.trackKey) {
+      const localRaw = localStorage.getItem('radio-ch3-resume');
+      const localResume = localRaw ? JSON.parse(localRaw) : null;
+      if (!localResume || serverResume.ts > (localResume.savedAt || 0)) {
+        localStorage.setItem('radio-ch3-resume', JSON.stringify({
+          trackKey: serverResume.trackKey,
+          trackName: serverResume.trackName,
+          position: serverResume.pos,
+          savedAt: serverResume.ts
+        }));
+      }
+    }
   } catch {} // 서버 실패 시 로컬만 사용
+  finally { serverTrackPosFetched = true; }
 }
 
 // 이벤트 기반 서버 동기화: 트랙 전환/일시정지/채널 전환 시 호출
