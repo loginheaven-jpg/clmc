@@ -1684,16 +1684,7 @@ function initDiscSwipe() {
     else if (e.key === 'ArrowRight') switchToChannel(focusedIndex + 1);
   });
 
-  // CH6 디스크 중앙 클릭 → AAC/MP3 토글
-  discCenter.addEventListener('click', (e) => {
-    if (currentChannel !== 6) return;
-    e.stopPropagation();
-    rscFormat = rscFormat === 'aac' ? 'mp3' : 'aac';
-    localStorage.setItem('radio-rsc-format', rscFormat);
-    discFreq.textContent = rscFormat.toUpperCase();
-    showToast('스트림: ' + rscFormat.toUpperCase() + (rscFormat === 'aac' ? ' 96kbps' : ' 128kbps'));
-    loadRsc();
-  });
+  // CH6 디스크 중앙 클릭 → 음질 토글 제거 (관리자 설정으로 이동)
 }
 
 // ── Toast ──
@@ -3456,6 +3447,26 @@ function buildChannelConfigUI() {
       `;
       panel.appendChild(row);
     });
+  // Radio Swiss 포맷 설정
+  const rscRow = document.createElement('div');
+  rscRow.style.cssText = 'margin-top:16px;padding:10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px';
+  rscRow.innerHTML = `
+    <div style="font-size:0.8rem;color:#aaa;margin-bottom:8px">Radio Swiss Classic 스트림</div>
+    <div style="display:flex;gap:8px">
+      <button class="extra-btn rsc-fmt" data-fmt="aac" style="flex:1;padding:6px;${rscFormat==='aac'?'color:gold;border-color:gold':'opacity:0.5'}">AAC 96kbps</button>
+      <button class="extra-btn rsc-fmt" data-fmt="mp3" style="flex:1;padding:6px;${rscFormat==='mp3'?'color:gold;border-color:gold':'opacity:0.5'}">MP3 128kbps</button>
+    </div>
+  `;
+  panel.appendChild(rscRow);
+  rscRow.querySelectorAll('.rsc-fmt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rscFormat = btn.dataset.fmt;
+      localStorage.setItem('radio-rsc-format', rscFormat);
+      showToast('Radio Swiss: ' + rscFormat.toUpperCase());
+      buildChannelConfigUI();
+    });
+  });
+
   const saveBtn = document.createElement('button');
   saveBtn.className = 'save-order-btn';
   saveBtn.textContent = '저장';
