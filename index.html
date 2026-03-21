@@ -1717,15 +1717,16 @@ async function toggleTorch() {
   try {
     torchStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     torchTrack = torchStream.getVideoTracks()[0];
-    const caps = torchTrack.getCapabilities ? torchTrack.getCapabilities() : {};
-    if (!caps.torch) {
+    // capability 체크 없이 직접 시도 (삼성 등 일부 기기에서 caps에 torch 누락)
+    try {
+      await torchTrack.applyConstraints({ advanced: [{ torch: true }] });
+    } catch (constraintErr) {
       torchTrack.stop(); torchStream = null; torchTrack = null;
       torchSupported = false;
       discCenter.style.cursor = 'default';
       showToast('이 기기에서는 플래시를 지원하지 않습니다');
       return;
     }
-    await torchTrack.applyConstraints({ advanced: [{ torch: true }] });
     torchOn = true;
     updateTorchUI(true);
     // 10분 자동 꺼짐
