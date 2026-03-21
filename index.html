@@ -1715,16 +1715,31 @@ function checkTorchSupportLazy() {
 async function toggleTorch() {
   if (torchOn) { stopTorch(); return; }
   try {
-    torchStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    torchTrack = torchStream.getVideoTracks()[0];
-    // capability 체크 없이 직접 시도 (삼성 등 일부 기기에서 caps에 torch 누락)
-    try {
-      await torchTrack.applyConstraints({ advanced: [{ torch: true }] });
-    } catch (constraintErr) {
-      torchTrack.stop(); torchStream = null; torchTrack = null;
+    // 방법 1: facingMode + advanced constraint
+    // 방법 2: 직접 torch 요청
+    // 방법 3: facingMode 없이 시도
+    const attempts = [
+      { video: { facingMode: 'environment' } },
+      { video: { facingMode: { exact: 'environment' }, torch: true } },
+      { video: true }
+    ];
+    let success = false;
+    for (const constraint of attempts) {
+      try {
+        torchStream = await navigator.mediaDevices.getUserMedia(constraint);
+        torchTrack = torchStream.getVideoTracks()[0];
+        await torchTrack.applyConstraints({ advanced: [{ torch: true }] });
+        success = true;
+        break;
+      } catch (e) {
+        if (torchTrack) { torchTrack.stop(); torchTrack = null; }
+        if (torchStream) { torchStream.getTracks().forEach(t => t.stop()); torchStream = null; }
+      }
+    }
+    if (!success) {
       torchSupported = false;
       discCenter.style.cursor = 'default';
-      showToast('이 기기에서는 플래시를 지원하지 않습니다');
+      showToast('이 기기의 브라우저에서 플래시를 지원하지 않습니다');
       return;
     }
     torchOn = true;
