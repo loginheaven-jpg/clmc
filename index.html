@@ -1830,7 +1830,6 @@ function stopPlayback() {
     saveResume(currentChannel);
     scheduleServerSync();
   }
-  enterChannelGen++; // 진행 중인 채널 로더 무효화
   playTrackGeneration++; // 진행 중인 비동기 재생 무효화
   stopHls();
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
