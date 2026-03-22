@@ -265,7 +265,10 @@ body{
 .volume-slider{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,0.08);border-radius:2px;outline:none}
 .volume-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 8px var(--accent)}
 .volume-slider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:none}
-.vol-num{font-size:11px;opacity:0.35;width:26px;text-align:right;font-variant-numeric:tabular-nums;font-family:'Space Grotesk',monospace}
+.vol-num{font-size:11px;opacity:0.35;width:32px;text-align:right;font-variant-numeric:tabular-nums;font-family:'Space Grotesk',monospace}
+.volume-slider.boost-zone::-webkit-slider-thumb{background:#e8a040;box-shadow:0 0 10px rgba(232,160,64,0.6)}
+.volume-slider.boost-zone::-moz-range-thumb{background:#e8a040;box-shadow:0 0 10px rgba(232,160,64,0.6)}
+.vol-num.boost-zone{color:#e8a040;opacity:0.8;font-weight:600}
 .sleep-btns{display:flex;gap:6px;flex:1}
 .sleep-btn{
   flex:1;padding:6px 0;border-radius:9px;font-size:11px;cursor:pointer;transition:all 0.2s;
@@ -786,7 +789,7 @@ body{
         <path d="M11 5.5 C12 6.5 12 9.5 11 10.5" stroke="#ece4d8" stroke-width="1.2" fill="none" stroke-linecap="round"/>
         <path d="M13 4 C14.5 5.5 14.5 10.5 13 12" stroke="#ece4d8" stroke-width="1.2" fill="none" stroke-linecap="round"/>
       </svg>
-      <input type="range" class="volume-slider" id="volSlider" min="0" max="1" step="0.01" value="0.8">
+      <input type="range" class="volume-slider" id="volSlider" min="0" max="1.5" step="0.01" value="0.8">
       <span class="vol-num" id="volNum">80</span>
     </div>
     <div class="panel-row">
@@ -1110,6 +1113,11 @@ let recSilenceThresholdRaw = parseInt(localStorage.getItem('radio-rec-threshold'
 let REC_SILENCE_THRESHOLD = recSilenceThresholdRaw / 32767;
 let REC_SILENCE_DURATION = parseInt(localStorage.getItem('radio-rec-silence-dur')) || 1000;
 let hlsSourceNode = null, howlSourceNode = null;
+
+// ── Volume Boost (100% 초과 증폭) ──
+let boostGainNode = null;
+let boostCompressor = null;
+let boostChainActive = false;
 
 // Admin
 let adminChannel = 'list1';
@@ -1981,7 +1989,7 @@ function initAudioContext() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   gainNode = audioCtx.createGain();
-  gainNode.gain.value = currentVolume;
+  gainNode.gain.value = currentVolume > 1.0 ? 1.0 : currentVolume;
   recDestination = audioCtx.createMediaStreamDestination();
   recAnalyser = audioCtx.createAnalyser();
   recAnalyser.fftSize = 2048;
@@ -1990,14 +1998,45 @@ function initAudioContext() {
   gainNode.connect(recAnalyser);
 }
 
+function ensureBoostChain() {
+  if (boostChainActive) return;
+  // AudioContext 필요
+  initAudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  // 부스트 GainNode + DynamicsCompressor 생성
+  boostGainNode = audioCtx.createGain();
+  boostGainNode.gain.value = 1.0;
+  boostCompressor = audioCtx.createDynamicsCompressor();
+  boostCompressor.threshold.setValueAtTime(-24, audioCtx.currentTime);
+  boostCompressor.knee.setValueAtTime(30, audioCtx.currentTime);
+  boostCompressor.ratio.setValueAtTime(4, audioCtx.currentTime);
+  boostCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+  boostCompressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+  // gainNode → destination 연결을 끊고, 부스트 체인 삽입
+  // recDestination/recAnalyser 연결은 유지
+  try { gainNode.disconnect(audioCtx.destination); } catch {}
+  gainNode.connect(boostGainNode);
+  boostGainNode.connect(boostCompressor);
+  boostCompressor.connect(audioCtx.destination);
+  // 현재 재생 중인 audioEl을 AudioContext에 연결 (아직 안 되어 있으면)
+  if (audioEl && !hlsSourceNode) {
+    hlsSourceNode = audioCtx.createMediaElementSource(audioEl);
+    hlsSourceNode.connect(gainNode);
+  }
+  boostChainActive = true;
+  // gainNode는 항상 1.0, 볼륨은 boostGainNode가 제어
+  gainNode.gain.value = 1.0;
+  if (audioEl) audioEl.volume = 1;
+}
+
 async function playHls(url, useProxy) {
   const hlsGen = enterChannelGen; // 호출 시점의 채널 세대 캡처
   if (currentHls) { currentHls.destroy(); currentHls = null; }
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
   const el = ensureAudioEl();
-  // AudioContext는 녹음 시에만 생성 (lazy). 일반 재생은 직접 볼륨 제어
-  if (hlsSourceNode) { el.volume = 1; /* gainNode으로 볼륨 제어 */ }
-  else { el.volume = currentVolume; }
+  // AudioContext 또는 부스트 체인이 활성이면 el.volume=1 (gainNode/boostGainNode가 제어)
+  if (hlsSourceNode || boostChainActive) { el.volume = 1; }
+  else { el.volume = currentVolume > 1.0 ? 1.0 : currentVolume; }
   const Hls = await loadHlsJs();
   if (Hls.isSupported()) {
     const hlsConfig = { enableWorker:false, lowLatencyMode:true, backBufferLength:30, maxBufferLength:30 };
@@ -2110,8 +2149,8 @@ async function playIcecast(url) {
   if (currentHls) { currentHls.destroy(); currentHls = null; }
   if (currentHowl) { currentHowl.unload(); currentHowl = null; }
   const el = ensureAudioEl();
-  if (hlsSourceNode) { el.volume = 1; }
-  else { el.volume = currentVolume; }
+  if (hlsSourceNode || boostChainActive) { el.volume = 1; }
+  else { el.volume = currentVolume > 1.0 ? 1.0 : currentVolume; }
   const proxyUrl = WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(url);
   el.src = proxyUrl;
   el.load();
@@ -2233,7 +2272,7 @@ function playTrack(channel, trackIndex, startPosition = 0) {
   // 표준 <audio> 요소로 직접 재생 (Chrome 백그라운드 오디오 보호 대상)
   const el = ensureAudioEl();
   el.src = src;
-  el.volume = currentVolume;
+  el.volume = (hlsSourceNode || boostChainActive) ? 1 : (currentVolume > 1.0 ? 1.0 : currentVolume);
   el.playbackRate = currentSpeed;
   el.preload = 'auto';
 
@@ -2855,7 +2894,7 @@ function bgKeepAliveHandler() {
     if (node && node.paused && !node.ended) {
       node.play().catch(() => {});
     }
-    if (currentHowl.volume() !== currentVolume) currentHowl.volume(currentVolume);
+    applyVolume(currentVolume);
   }
   // HLS <audio> 노드 복구 — paused 상태뿐 아니라 frozen 상태도 감지
   if (audioEl) {
@@ -2933,7 +2972,8 @@ document.addEventListener('visibilitychange', async () => {
       if (audioEl.paused && !audioEl.ended) {
         audioEl.play().catch(() => {});
       }
-      if (audioEl.volume !== currentVolume && !hlsSourceNode) audioEl.volume = currentVolume;
+      // 볼륨 복원 (applyVolume로 통일)
+      applyVolume(currentVolume);
       // 스톨 워치독 시간 리셋 (탭 복귀 직후 오탐 방지)
       lastWatchdogTime = -1;
     }
@@ -2942,10 +2982,8 @@ document.addEventListener('visibilitychange', async () => {
       if (!currentHowl.playing()) {
         currentHowl.play();
       }
-      // 볼륨 강제 복원 (Android resume 시 풀볼륨 버그 방지)
-      currentHowl.volume(currentVolume);
-      const node = currentHowl._sounds[0]?._node;
-      if (node) node.volume = currentVolume;
+      // 볼륨 강제 복원 (applyVolume로 통일)
+      applyVolume(currentVolume);
     }
     // 라이브 폴링 재개
     if (liveMode && liveSessionId && !livePollTimer) {
@@ -4775,12 +4813,38 @@ function showIdentifyFail() {
   showIdentifyPopup(`<div class="identify-fail-icon">${m.icon}</div><div class="identify-fail">${m.text}</div>`, 5000);
 }
 
+// 볼륨 초기화 (0.0~1.5 범위, 기존 0.0~1.0 호환)
+if (currentVolume > 1.5) currentVolume = 1.5;
+if (currentVolume < 0) currentVolume = 0;
 volSlider.value = currentVolume;
 volNum.textContent = Math.round(currentVolume * 100);
+const isBoostedInit = currentVolume > 1.0;
+volSlider.classList.toggle('boost-zone', isBoostedInit);
+volNum.classList.toggle('boost-zone', isBoostedInit);
+
 function applyVolume(v) {
-  if (gainNode) gainNode.gain.value = v;
-  if (currentHowl && !currentHowl._sounds[0]?._node?._acConnected) currentHowl.volume(v);
-  if (audioEl && !hlsSourceNode) audioEl.volume = v;
+  const isBoosted = v > 1.0;
+  if (isBoosted) {
+    // 부스트 구간 (100~150%): AudioContext 체인 사용
+    ensureBoostChain();
+    const boostGain = 1.0 + (v - 1.0) * 3.0; // 1.0 ~ 2.5
+    boostGainNode.gain.value = boostGain;
+    if (gainNode) gainNode.gain.value = 1.0;
+    if (audioEl) audioEl.volume = 1;
+    if (currentHowl && !currentHowl._sounds[0]?._node?._acConnected) currentHowl.volume(1);
+  } else if (boostChainActive) {
+    // 일반 구간이지만 부스트 체인이 이미 활성화됨
+    // audioEl.volume은 AudioContext 연결 후 무의미, boostGainNode로 제어
+    boostGainNode.gain.value = v;
+    if (gainNode) gainNode.gain.value = 1.0;
+    if (audioEl) audioEl.volume = 1;
+    if (currentHowl && !currentHowl._sounds[0]?._node?._acConnected) currentHowl.volume(1);
+  } else {
+    // 부스트 체인 비활성 — 기존 동작 100% 유지
+    if (gainNode) gainNode.gain.value = v;
+    if (currentHowl && !currentHowl._sounds[0]?._node?._acConnected) currentHowl.volume(v);
+    if (audioEl && !hlsSourceNode) audioEl.volume = v;
+  }
 }
 
 volSlider.addEventListener('input', e => {
@@ -4789,6 +4853,10 @@ volSlider.addEventListener('input', e => {
   volNum.textContent = Math.round(v * 100);
   applyVolume(v);
   localStorage.setItem('radio-volume', v);
+  // 부스트 시각 피드백
+  const isBoosted = v > 1.0;
+  volSlider.classList.toggle('boost-zone', isBoosted);
+  volNum.classList.toggle('boost-zone', isBoosted);
 });
 
 // Seek bar drag (mouse + touch)
