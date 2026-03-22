@@ -1,6 +1,6 @@
 # 예봄라디오 2.0 — 아키텍처 문서
 
-> **버전**: 2026-03-06 v2.5.1 (채널 설정 서버 동기화)
+> **버전**: 2026-03-22 v2.6.0 (간편 로그인 추가)
 > **프로젝트 경로**: `c:\dev\radio\yebomradio`
 > **GitHub**: https://github.com/loginheaven-jpg/radio
 > **Pages URL**: https://radio-axi.pages.dev
@@ -16,7 +16,7 @@
 |---|---|
 | 인프라 | Cloudflare Workers + R2 + KV + Pages |
 | 프론트엔드 | 단일 `index.html` (Vanilla JS, CSS 인라인, 빌드 도구 없음) |
-| 인증 | Admin Key — Bearer 토큰 방식 (`wrangler secret`), SSO — 교적부 세션 연동 (녹음 기능) |
+| 인증 | 간편 로그인 (이름+전화4자리) + SSO + Admin Key | 트리플 인증 |
 | PWA | `manifest.json` + `sw.js` (자동 업데이트, 오프라인 폴백) |
 | UI 패턴 | **Warm Vinyl** — 중앙 회전 바이닐 디스크 + 채널별 테마 + 앰비언트 효과 |
 | 디자인 참조 | `c:\dev\radio\UI-GUIDE.md` (디자인 명세), `c:\dev\radio\radio-vinyl.jsx` (React 프로토타입) |
@@ -76,7 +76,7 @@ c:\dev\radio\
 
 ### 파일: `worker.js`
 
-**바인딩**: R2 `RADIO_BUCKET` (coachdb-files), KV `RADIO_KV`, Secret `ADMIN_KEY`
+**바인딩**: R2 `RADIO_BUCKET` (coachdb-files), KV `RADIO_KV`, Secret `ADMIN_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
 
 | Method | Path | 설명 | 인증 |
 |---|---|---|---|
@@ -106,6 +106,7 @@ c:\dev\radio\
 | PUT | `/api/channel-config` | 서버 채널 설정 저장 | `Bearer ADMIN_KEY` |
 | GET | `/api/user/trackpos` | CH3 트랙별 재생위치 조회 | `X-User-Id` |
 | PUT | `/api/user/trackpos` | CH3 트랙별 재생위치 저장 (ts 병합) | `X-User-Id` |
+| **POST** | **`/api/auth/simple-login`** | **간편 로그인 (이름+전화뒤4자리 → members 매칭)** | 없음 |
 
 ### HLS 프록시 화이트리스트
 `gscdn.kbs.co.kr`, `kbs.co.kr`, `febc.net`, `mlive2.febc.net`
@@ -115,11 +116,36 @@ c:\dev\radio\
 - `Content-Range`, `Accept-Ranges: bytes` 헤더 포함 → 206 Partial Content 응답
 - 전체 요청 시 200으로 전체 바디 반환
 
-### 인증 방식
+### 인증 체계
+
+#### 1. 간편 로그인 (메인 — 성도용)
+이름 + 전화번호 뒤 4자리로 교적부 members 테이블을 직접 매칭한다.
+- **API**: `POST /api/auth/simple-login` (worker.js)
+- **동작**: Worker → Supabase REST API로 members 조회 → 이름+전화뒤4자리 매칭
+- **응답**: `{ success: true, user: { id: member_id, name } }`
+- **저장**: 프론트엔드에서 `radioUser`에 저장 + `localStorage['radio-user']` 캐시 (5분 TTL)
+- **교적부 회원(users) 계정 불필요** — members에 등록된 성도면 즉시 사용 가능
+- **Secrets**: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (wrangler secret)
+
+#### 2. SSO (보조 — 교적부 회원용)
+교적부에 로그인된 상태면 쿠키 기반 자동 인증:
+- `saint_record_session` 쿠키로 `saint.yebom.org/api/auth/session` 호출 (credentials: include)
+- 응답의 `user` 객체를 `radioUser`에 저장
+- 로그인 모달에서 "예봄서비스로 로그인" 버튼 → 교적부 로그인 페이지로 리다이렉트
+
+#### 3. Admin (관리자)
 ```
 Authorization: Bearer <ADMIN_KEY>
 ```
 `ADMIN_KEY`는 `wrangler secret put ADMIN_KEY`로 설정. 클라이언트에서 `localStorage['radio-admin-key']`에 캐시.
+
+#### 로그인이 필요한 기능
+| 기능 | 인증 | 헤더 |
+|------|------|------|
+| 청취 (모든 채널) | 불필요 | — |
+| 녹음 | 간편/SSO | — (프론트엔드 `radioUser` 확인) |
+| 재생위치 동기화 | 간편/SSO | `X-User-Id: {member_id}` |
+| 관리자 기능 | Admin Key | `Authorization: Bearer {key}` |
 
 ---
 
