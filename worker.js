@@ -1071,6 +1071,10 @@ function corsHeaders(request) {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-Chunk-Index, X-Chunk-Duration, X-Upload-Key, X-Upload-Id, X-Part-Number, X-User-Id, X-User-Name, X-Admin-Key',
     'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
     'Access-Control-Max-Age': '86400',
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
   };
 }
 
