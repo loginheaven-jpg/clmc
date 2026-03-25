@@ -142,8 +142,8 @@ body{
 .channel-info{text-align:center;margin-top:12px;margin-bottom:6px}
 .channel-name{font-size:21px;font-weight:700}
 .channel-label{font-size:13px;opacity:0.72;margin-top:3px}
-.share-btn{background:none;border:none;color:var(--accent);opacity:0.3;cursor:pointer;padding:2px 6px;vertical-align:middle;transition:opacity 0.2s}
-.share-btn:hover,.share-btn:active{opacity:0.7}
+.share-btn{background:none;border:none;color:var(--accent);opacity:0.5;cursor:pointer;padding:6px 8px;vertical-align:middle;transition:opacity 0.2s;flex-shrink:0}
+.share-btn:hover,.share-btn:active{opacity:0.85}
 
 /* Dots */
 .dot-indicators{display:flex;gap:6px;margin-bottom:4px;align-items:center;justify-content:center}
@@ -663,6 +663,7 @@ body{
   <!-- Now Playing -->
   <div class="now-playing" id="nowPlayingBar">
     <span id="headerSubtitle"></span>
+    <button class="share-btn" id="shareBtn" aria-label="링크 복사"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
   </div>
 
   <!-- Disc Area -->
@@ -708,7 +709,7 @@ body{
     <canvas id="lampCanvas" width="420" height="420" style="display:none;width:210px;height:210px"></canvas>
 
     <div class="channel-info">
-      <div class="channel-name" id="channelName"></div><button class="share-btn" id="shareBtn" aria-label="링크 복사"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
+      <div class="channel-name" id="channelName"></div>
       <div class="channel-label" id="channelLabel"></div>
     </div>
 
