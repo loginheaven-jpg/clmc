@@ -1160,6 +1160,7 @@ const ONLY_MUSIC_CHECK_MS = 200; // 분석 간격 (ms)
 // 분류 히스토리 (오탐 방지: 최근 5프레임 중 다수결)
 let onlyMusicHistory = [];
 const ONLY_MUSIC_HISTORY_LEN = 5;
+let onlyMusicCurrentTitle = ''; // 현재 감지된 곡 제목 (녹음 파일명용)
 
 // Admin
 let adminChannel = 'list1';
@@ -2163,6 +2164,7 @@ function stopOnlyMusicDetection() {
 }
 
 function applyOnlyMusicVolume(isSpeech) {
+  const wasSpeech = onlyMusicMultiplier < 1.0;
   const targetMult = isSpeech ? (onlyMusicSpeechVol / 100) : 1.0;
   // gainNode.gain에 1초 fade 적용
   if (audioCtx && gainNode) {
@@ -2176,12 +2178,36 @@ function applyOnlyMusicVolume(isSpeech) {
     );
   }
   onlyMusicMultiplier = targetMult;
+  // 음악 시작 감지 → 곡 제목 취득 (녹음 파일명용)
+  if (!isSpeech && wasSpeech && isRecording && recAutoSplit) {
+    fetchCurrentTrackTitle();
+  }
   // UI 업데이트 — Only Music 배지 상태 표시
   const badge = $('onlyMusicBadge');
   if (badge) {
     badge.classList.toggle('speech-active', isSpeech);
     badge.textContent = isSpeech ? '♪ 멘트' : '♪ Only';
   }
+}
+
+// 현재 재생 중인 곡 제목 비동기 취득
+async function fetchCurrentTrackTitle() {
+  try {
+    if (currentChannel === 6) {
+      // Radio Swiss: 기존 now playing API (무료, 추가 호출 아님)
+      const r = await fetch(WORKER_URL + '/api/rsc-nowplaying');
+      const d = await r.json();
+      onlyMusicCurrentTitle = d.title ? (d.composer ? d.composer + ' - ' : '') + d.title : '';
+    } else if ((currentChannel === 1 || currentChannel === 2) && !/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      // KBS/극동: ACR 호출 (PC에서만)
+      const r = await fetch(WORKER_URL + '/api/identify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: currentChannel })
+      });
+      const d = await r.json();
+      onlyMusicCurrentTitle = d.found ? (d.artist ? d.artist + ' - ' : '') + d.title : '';
+    }
+  } catch { onlyMusicCurrentTitle = ''; }
 }
 
 function toggleOnlyMusic() {
@@ -3215,9 +3241,15 @@ function connectHowlToAudioCtx() {
 }
 function generateRecFilename() {
   const cn = CHANNELS.find(c => c.num === currentChannel)?.name || '';
-  const raw = nowPlayingEl.textContent || '';
-  const prog = raw.replace(/^LIVE\s*/, '').replace(/^ON AIR\s*/, '').trim();
   const ts = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(2, 14);
+  // Only Music + 분할녹음 + 곡 제목이 있으면 곡 제목 사용
+  let prog;
+  if (onlyMusicEnabled && recAutoSplit && onlyMusicCurrentTitle) {
+    prog = onlyMusicCurrentTitle;
+  } else {
+    const raw = nowPlayingEl.textContent || '';
+    prog = raw.replace(/^LIVE\s*/, '').replace(/^ON AIR\s*/, '').trim();
+  }
   return (cn + '_' + (prog || '') + '_' + ts).replace(/[\\/:*?"<>|]/g, '');
 }
 function updateRecordBtn() {
