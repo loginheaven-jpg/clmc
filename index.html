@@ -186,6 +186,15 @@ body{
 .rec-btn.visible{display:flex}
 .rec-btn.recording{background:rgba(232,64,64,0.25);border-color:rgba(232,64,64,0.5)}
 .rec-dot{width:8px;height:8px;border-radius:50%;background:#e84040;display:inline-block;animation:recDot 1.2s ease infinite}
+.rec-mode-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center}
+.rec-mode-box{background:#1a1a2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;width:280px;text-align:center}
+.rec-mode-title{color:#e0d0c0;font-size:15px;font-weight:600;margin-bottom:16px}
+.rec-mode-btn{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background 0.2s}
+.rec-mode-btn:hover,.rec-mode-btn:active{background:rgba(255,255,255,0.12)}
+.rec-mode-icon{font-size:20px;flex-shrink:0}
+.rec-mode-label{color:#e0d0c0;font-size:14px;font-weight:500}
+.rec-mode-desc{color:rgba(255,255,255,0.4);font-size:11px;margin-left:auto}
+.rec-mode-cancel{width:100%;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;padding:10px;cursor:pointer;margin-top:4px}
 .identify-btn{
   background:rgba(106,180,220,0.1);border:1px solid rgba(106,180,220,0.2);
   border-radius:12px;padding:8px 16px;color:#80c0e8;font-size:12px;
@@ -1108,7 +1117,12 @@ let isRecording = false;
 let audioCtx = null, gainNode = null, recDestination = null, recAnalyser = null;
 let mediaRecorder = null, recordedChunks = [], recSegmentNum = 0;
 let recStartTime = 0, recTimerInterval = null;
-let recFormat = 'webm'; // MP3 인코딩은 브라우저 MediaRecorder 미지원, WebM/Opus 고정
+// 녹음 포맷 자동 감지: Android→WebM/Opus, iOS→MP4/AAC
+const recMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+  : MediaRecorder.isTypeSupported('audio/mp4;codecs=aac') ? 'audio/mp4;codecs=aac'
+  : 'audio/webm';
+const recExt = recMime.startsWith('audio/mp4') ? 'm4a' : 'webm';
+let recAutoSplit = false; // true: 자동분할, false: 계속녹음
 let recSilenceStart = 0, recSilenceTimer = null;
 let recSilenceThresholdRaw = parseInt(localStorage.getItem('radio-rec-threshold')) || 50;
 let REC_SILENCE_THRESHOLD = recSilenceThresholdRaw / 32767;
@@ -3038,7 +3052,8 @@ function updateRecordBtn() {
 }
 function updateRecordFormatBtn() { btnRecordFormat.textContent = 'WebM'; }
 function toggleRecordFormat() {
-  showToast('녹음 형식: WebM/Opus (MP3는 브라우저에서 지원되지 않습니다)');
+  const fmt = recMime.includes('opus') ? 'WebM/Opus' : recMime.includes('aac') ? 'M4A/AAC' : 'WebM';
+  showToast('녹음 형식: ' + fmt);
 }
 function startRecordTimer() {
   recStartTime = Date.now();
@@ -3051,11 +3066,9 @@ function startRecordTimer() {
 function stopRecordTimer() { clearInterval(recTimerInterval); recordTimerEl.textContent = '⏺ 00:00'; }
 function saveRecordedBlob(chunks, segLabel) {
   if (chunks.length === 0) return;
-  const ext = recFormat === 'mp3' ? 'mp3' : 'webm';
-  const mimeType = recFormat === 'mp3' ? 'audio/mpeg' : 'audio/webm';
-  const blob = new Blob(chunks, {type:mimeType});
+  const blob = new Blob(chunks, {type: recMime});
   if (blob.size < 1000) return;
-  const fname = generateRecFilename() + (segLabel ? '_'+segLabel : '') + '.' + ext;
+  const fname = generateRecFilename() + (segLabel ? '_'+segLabel : '') + '.' + recExt;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
@@ -3085,8 +3098,7 @@ function splitRecording() {
   setTimeout(() => {
     if (!isRecording) return;
     recSegmentNum++; recordedChunks = [];
-    const mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-    mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType:mt, audioBitsPerSecond:192000});
+    mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType: recMime, audioBitsPerSecond: 192000});
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => { saveRecordedBlob(recordedChunks, String(recSegmentNum).padStart(3,'0')); };
     mediaRecorder.start(1000);
@@ -3094,6 +3106,36 @@ function splitRecording() {
 }
 async function startRecording() {
   if (!isPlaying) { showToast('먼저 재생을 시작해주세요'); return; }
+  // 녹음 모드 선택 팝업
+  showRecordModePopup();
+}
+function showRecordModePopup() {
+  if ($('recModePopup')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'recModePopup';
+  overlay.className = 'rec-mode-overlay';
+  overlay.innerHTML = `
+    <div class="rec-mode-box">
+      <div class="rec-mode-title">녹음 모드 선택</div>
+      <button class="rec-mode-btn" id="recModeContinuous">
+        <span class="rec-mode-icon">⏺</span>
+        <span class="rec-mode-label">계속 녹음</span>
+        <span class="rec-mode-desc">하나의 파일로 저장</span>
+      </button>
+      <button class="rec-mode-btn" id="recModeSplit">
+        <span class="rec-mode-icon">✂️</span>
+        <span class="rec-mode-label">자동 분할</span>
+        <span class="rec-mode-desc">무음 구간에서 파일 분리</span>
+      </button>
+      <button class="rec-mode-cancel" id="recModeCancel">취소</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  $('recModeContinuous').onclick = () => { overlay.remove(); recAutoSplit = false; doStartRecording(); };
+  $('recModeSplit').onclick = () => { overlay.remove(); recAutoSplit = true; doStartRecording(); };
+  $('recModeCancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+async function doStartRecording() {
   // AudioContext 초기화 (녹음 시에만 생성)
   initAudioContext();
   if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -3109,13 +3151,13 @@ async function startRecording() {
     connectHowlToAudioCtx();
   }
   recSegmentNum = 0; recordedChunks = [];
-  const mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-  mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType:mt, audioBitsPerSecond:192000});
+  mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType: recMime, audioBitsPerSecond: 192000});
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = () => { const seg = recSegmentNum > 0 ? String(recSegmentNum).padStart(3,'0') : ''; saveRecordedBlob(recordedChunks, seg); };
   mediaRecorder.start(1000);
-  isRecording = true; updateRecordBtn(); startRecordTimer(); startSilenceDetection();
-  showToast('녹음 시작');
+  isRecording = true; updateRecordBtn(); startRecordTimer();
+  if (recAutoSplit) startSilenceDetection();
+  showToast(recAutoSplit ? '녹음 시작 (자동 분할)' : '녹음 시작 (계속 녹음)');
 }
 function stopRecording() {
   if (!isRecording) return;
