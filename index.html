@@ -107,6 +107,11 @@ body{
 @keyframes arrowPulseR{0%,100%{opacity:0.35;transform:translateX(0)}50%{opacity:0.7;transform:translateX(4px)}}
 .arrow-left.pulsing{animation:arrowPulseL 0.8s ease-in-out 3}
 .arrow-right.pulsing{animation:arrowPulseR 0.8s ease-in-out 3}
+.ch-glow{position:absolute;top:0;bottom:0;width:10px;z-index:1;pointer-events:none;transition:opacity 0.6s,background 0.6s}
+.ch-glow-left{left:0;border-radius:0 6px 6px 0}
+.ch-glow-right{right:0;border-radius:6px 0 0 6px}
+@keyframes glowBreath{0%,100%{opacity:0.25}50%{opacity:0.5}}
+.ch-glow.breathing{animation:glowBreath 3s ease-in-out infinite}
 
 /* Vinyl Disc */
 .vinyl-disc{width:210px;height:210px;border-radius:50%;position:relative;cursor:grab;will-change:transform}
@@ -687,6 +692,8 @@ body{
 
   <!-- Disc Area -->
   <div class="disc-area" id="discArea">
+    <div class="ch-glow ch-glow-left" id="chGlowLeft"></div>
+    <div class="ch-glow ch-glow-right" id="chGlowRight"></div>
     <button class="arrow-btn arrow-left" id="arrowPrev" aria-label="이전 채널">
       <svg width="24" height="24" viewBox="0 0 14 14"><path d="M9 3 L5 7 L9 11" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
@@ -1459,6 +1466,20 @@ function applyChannelTheme(ch) {
 
   channelNameEl.textContent = def.name;
   channelLabelEl.textContent = def.label;
+
+  // 인접 채널 컬러 그로우
+  const curIdx = activeChannels.findIndex(c => c.num === ch);
+  const prevCh = activeChannels[(curIdx - 1 + activeChannels.length) % activeChannels.length];
+  const nextCh = activeChannels[(curIdx + 1) % activeChannels.length];
+  const glowL = $('chGlowLeft'), glowR = $('chGlowRight');
+  if (glowL && prevCh) {
+    glowL.style.background = `linear-gradient(to right, ${prevCh.accent}50, transparent)`;
+    glowL.classList.add('breathing');
+  }
+  if (glowR && nextCh) {
+    glowR.style.background = `linear-gradient(to left, ${nextCh.accent}50, transparent)`;
+    glowR.classList.add('breathing');
+  }
 
   // PWA button
   const pwa = $('pwaInstallBtn');
