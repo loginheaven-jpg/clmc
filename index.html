@@ -1082,6 +1082,7 @@ let adminKey = localStorage.getItem('radio-admin-key') || '';
 
 let currentChannel = 1;
 let isPlaying = false;
+let userPaused = false; // 사용자가 명시적으로 pause한 상태 (백그라운드 복구 방지용)
 let currentHowl = null;
 let currentHls = null;
 let audioEl = null;
@@ -2630,20 +2631,22 @@ function updateTrackCounter() {
 function handlePlayPause() {
   // Live mode: stop/restart live player
   if (liveMode) {
-    if (isPlaying) { stopLivePlayer(); isPlaying = false; updatePlayBtn(false); }
-    else { enterChannel(5); }
+    if (isPlaying) { stopLivePlayer(); isPlaying = false; userPaused = true; updatePlayBtn(false); }
+    else { userPaused = false; enterChannel(5); }
     return;
   }
   // Replay mode: 일시정지/재개
   if (replayMode) {
-    if (isPlaying) { pauseReplay(); } else { resumeReplay(); }
+    if (isPlaying) { userPaused = true; pauseReplay(); } else { userPaused = false; resumeReplay(); }
     return;
   }
   if (currentChannel === 1 || currentChannel === 2 || currentChannel === 6) {
     if (isPlaying) {
+      userPaused = true;
       if (audioEl) audioEl.pause();
       isPlaying = false; updatePlayBtn(false);
     } else {
+      userPaused = false;
       if (audioEl && (audioEl.src || currentHls)) {
         audioEl.play().then(() => { isPlaying = true; updatePlayBtn(true); refreshLiveNowPlaying(); }).catch(() => {});
       } else { enterChannel(currentChannel); }
@@ -2651,19 +2654,21 @@ function handlePlayPause() {
   } else if (currentChannel === 3 || currentChannel === 4 || currentChannel === 7) {
     if (currentHowl) {
       if (isPlaying) {
+        userPaused = true;
         currentHowl.pause();
       } else {
+        userPaused = false;
         currentHowl.play();
         const ch = currentChannel;
         const t = setTimeout(() => { if (!isPlaying && currentChannel === ch) { showToast('재연결 중...'); enterChannel(ch); } }, 1500);
         currentHowl.once('play', () => clearTimeout(t));
       }
-    } else enterChannel(currentChannel);
+    } else { userPaused = false; enterChannel(currentChannel); }
   } else if (currentChannel === 5) {
     if (currentHowl) {
-      if (isPlaying) { currentHowl.pause(); userPausedCh5 = true; }
-      else { currentHowl.play(); userPausedCh5 = false; }
-    } else { enterChannel(5); }
+      if (isPlaying) { userPaused = true; currentHowl.pause(); userPausedCh5 = true; }
+      else { userPaused = false; currentHowl.play(); userPausedCh5 = false; }
+    } else { userPaused = false; enterChannel(5); }
   }
 }
 
@@ -2671,6 +2676,7 @@ function handlePlayPause() {
 async function enterChannel(channel) {
   const gen = ++enterChannelGen; // 이 호출의 세대 번호
   currentChannel = channel;
+  userPaused = false; // 채널 진입은 재생 의도 → pause 상태 해제
   userPausedCh5 = false;
   localStorage.setItem('radio-last-channel', String(channel));
   stopPlayback();
@@ -3132,7 +3138,7 @@ function createKeepAliveWorker() {
 
 let bgLastAudioTime = -1; // 백그라운드 keepalive용 이전 재생 위치
 function bgKeepAliveHandler() {
-  if (!isPlaying) return;
+  if (!isPlaying || userPaused) return;
   // Howler 노드 복구
   if (currentHowl) {
     const node = currentHowl._sounds[0]?._node;
@@ -3212,22 +3218,19 @@ document.addEventListener('visibilitychange', async () => {
     }
     // Wake Lock 재획득
     if (isPlaying) requestWakeLock();
-    // HLS/Icecast (<audio> 요소): 재생 상태인데 멈춰 있으면 재시작
-    if (isPlaying && audioEl) {
+    // HLS/Icecast (<audio> 요소): 재생 상태인데 멈춰 있으면 재시작 (사용자 pause 제외)
+    if (isPlaying && !userPaused && audioEl) {
       if (audioEl.paused && !audioEl.ended) {
         audioEl.play().catch(() => {});
       }
-      // 볼륨 복원 (applyVolume로 통일)
       applyVolume(currentVolume);
-      // 스톨 워치독 시간 리셋 (탭 복귀 직후 오탐 방지)
       lastWatchdogTime = -1;
     }
-    // Howler: 내부 상태와 실제 재생 불일치 복구 + 볼륨 보존
-    if (isPlaying && currentHowl) {
+    // Howler: 내부 상태와 실제 재생 불일치 복구 (사용자 pause 제외)
+    if (isPlaying && !userPaused && currentHowl) {
       if (!currentHowl.playing()) {
         currentHowl.play();
       }
-      // 볼륨 강제 복원 (applyVolume로 통일)
       applyVolume(currentVolume);
     }
     // 라이브 폴링 재개
