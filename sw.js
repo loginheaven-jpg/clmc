@@ -1,4 +1,11 @@
-const CACHE_NAME = 'yebom-radio-v9';
+const CACHE_NAME = 'yebom-radio-v10';
+
+const PRECACHE_ASSETS = [
+  '/',
+  '/manifest.json',
+  '/icon-192.png?v=2',
+  '/icon-512.png?v=2',
+];
 
 const NO_CACHE_PATTERNS = [
   /\.mp3$/, /\.m4a$/, /\.ogg$/, /\.wav$/, /\.flac$/, /\.opus$/,
@@ -10,6 +17,9 @@ const NO_CACHE_PATTERNS = [
 ];
 
 self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_ASSETS))
+  );
   self.skipWaiting();
 });
 

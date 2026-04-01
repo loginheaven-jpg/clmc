@@ -10,19 +10,29 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js" async></script>
 <script>
-// Howler audio pool monkey-patch: crossOrigin 설정으로 AudioContext 호환성 보장
-// createMediaElementSource()로 연결된 audio 요소가 풀에서 재사용될 때 CORS 차단 방지
-if (typeof Howler !== 'undefined' && Howler._obtainHtml5Audio) {
-  const _origObtain = Howler._obtainHtml5Audio;
-  Howler._obtainHtml5Audio = function() {
-    const node = _origObtain.call(this);
-    node.crossOrigin = 'anonymous';
-    return node;
-  };
+// Howler async 로드: 로드 완료 후 monkey-patch 적용
+function applyHowlerPatch() {
+  if (typeof Howler !== 'undefined' && Howler._obtainHtml5Audio) {
+    const _origObtain = Howler._obtainHtml5Audio;
+    Howler._obtainHtml5Audio = function() {
+      const node = _origObtain.call(this);
+      node.crossOrigin = 'anonymous';
+      return node;
+    };
+  }
+}
+// async 로드 대비: 이미 로드됐으면 즉시 적용, 아니면 로드 후 적용
+applyHowlerPatch();
+if (typeof Howler === 'undefined') {
+  const _checkHowler = setInterval(() => { if (typeof Howler !== 'undefined') { clearInterval(_checkHowler); applyHowlerPatch(); } }, 50);
 }
 </script>
 <style>
@@ -62,7 +72,7 @@ body{
 .time-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;transition:background 2s ease}
 .ambient-glow{
   position:fixed;top:12%;left:50%;transform:translateX(-50%);
-  width:280px;height:280px;border-radius:50%;filter:blur(50px);
+  width:280px;height:280px;border-radius:50%;filter:blur(30px);
   pointer-events:none;z-index:-1;transition:background 0.8s ease;
 }
 .particles-wrap{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
@@ -5921,7 +5931,12 @@ async function init() {
   applyTimeOverlay();
   setInterval(applyTimeOverlay, 60000);
   updateClock();
-  setInterval(updateClock, 1000);
+  let clockTimer = setInterval(updateClock, 1000);
+  // 화면 숨김 시 시계 갱신 중지 (배터리 절약), 복귀 시 즉시 재개
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearInterval(clockTimer); clockTimer = null; }
+    else { updateClock(); clockTimer = setInterval(updateClock, 1000); }
+  });
 
   await fetchServerChannelConfig(); // 서버 설정 → localStorage 동기화
   applyChannelConfig(); // activeChannels 설정
