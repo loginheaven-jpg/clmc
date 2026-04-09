@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgM" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E2D3D"/>
+      <stop offset="100%" style="stop-color:#3A5268"/>
+    </linearGradient>
+    <linearGradient id="glowM" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.25"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.02"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경: 전체 채움 (투명 불가, maskable 규격) -->
+  <rect x="0" y="0" width="512" height="512" fill="url(#bgM)"/>
+
+  <!-- 빛 효과 -->
+  <circle cx="420" cy="92" r="180" fill="url(#glowM)"/>
+
+  <!-- 안전 영역: 중앙 80% = 51~461px (410px 영역) -->
+  <!-- 심볼: scale 1.0으로 축소하여 안전 영역 안에 배치 -->
+  <g transform="translate(256, 215)">
+    <!-- 가장 바깥 웨이브 -->
+    <path d="M-100,-80 A 128,128 0 0,1 100,-80"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+    <path d="M100,80 A 128,128 0 0,1 -100,80"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+
+    <!-- 중간 웨이브 -->
+    <path d="M-65,-60 A 82,82 0 0,1 65,-60"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.6"/>
+    <path d="M65,60 A 82,82 0 0,1 -65,60"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- 안쪽 웨이브 -->
+    <path d="M-35,-35 A 45,45 0 0,1 35,-35"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+    <path d="M35,35 A 45,45 0 0,1 -35,35"
+          fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+
+    <!-- 중앙 십자가 -->
+    <rect x="-6" y="-18" width="12" height="36" rx="3" fill="white"/>
+    <rect x="-14" y="-10" width="28" height="12" rx="3" fill="white"/>
+  </g>
+
+  <!-- 하단 텍스트: 안전 영역 내 (y=450 이하) -->
+  <text x="256" y="445"
+        font-family="'Noto Sans KR', 'Malgun Gothic', sans-serif"
+        font-weight="700"
+        font-size="58"
+        fill="white"
+        text-anchor="middle"
+        letter-spacing="4"
+        opacity="0.95">Yebom</text>
+</svg>

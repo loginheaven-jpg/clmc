@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>채널 이동 힌트 시안 비교</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d0d1a; color:#e0d0c0; font-family:'Pretendard Variable',sans-serif; }
+h2 { text-align:center; padding:20px 0 10px; font-size:14px; color:#888; letter-spacing:2px; }
+.scene { display:flex; justify-content:center; align-items:center; padding:30px 0 40px; position:relative; overflow:hidden; }
+
+/* 공통 디스크 */
+.disc { width:200px; height:200px; border-radius:50%; position:relative;
+  background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0d0d1a 40%, #1a1a2e 41%, #151525 60%, #1a1a2e 61%, #0d0d1a 100%);
+  box-shadow: 0 0 40px rgba(212,164,92,0.08);
+}
+.disc-center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:80px; height:80px; border-radius:50%;
+  background: linear-gradient(145deg, rgba(212,164,92,0.2), rgba(212,164,92,0.05));
+  border: 1.5px solid rgba(212,164,92,0.2);
+  display:flex; align-items:center; justify-content:center; flex-direction:column;
+}
+.disc-icon { font-size:24px; opacity:0.7; }
+.disc-freq { font-size:9px; color:#f0d490; opacity:0.6; margin-top:2px; }
+.ch-name { text-align:center; margin-top:12px; font-size:13px; font-weight:600; color:#d4a45c; }
+.ch-label { text-align:center; font-size:10px; color:rgba(255,255,255,0.3); margin-top:2px; }
+
+/* 시안 A: 디스크 가장자리 컬러 블리드 */
+.bleed-left, .bleed-right {
+  position:absolute; top:50%; width:60px; height:120px;
+  transform:translateY(-50%); pointer-events:none;
+  border-radius:50%;
+  filter: blur(25px);
+  animation: bleedBreath 3s ease-in-out infinite;
+}
+.bleed-left { left:30px; background: radial-gradient(ellipse, rgba(196,138,106,0.35), transparent 70%); }
+.bleed-right { right:30px; background: radial-gradient(ellipse, rgba(106,140,184,0.35), transparent 70%); }
+@keyframes bleedBreath { 0%,100%{opacity:0.5} 50%{opacity:0.9} }
+
+.bleed-label {
+  position:absolute; top:50%; font-size:9px; font-weight:500; letter-spacing:0.5px;
+  transform:translateY(-50%); pointer-events:none;
+  animation: bleedBreath 3s ease-in-out infinite;
+}
+.bleed-label-left { left:20px; color:rgba(196,138,106,0.5); }
+.bleed-label-right { right:20px; color:rgba(106,140,184,0.5); }
+
+/* 화살표 (공통) */
+.arrow { position:absolute; top:50%; transform:translateY(-50%); opacity:0.35; cursor:pointer; }
+.arrow:hover { opacity:0.6; }
+.arrow-l { left:10px; }
+.arrow-r { right:10px; }
+.arrow svg { width:24px; height:24px; }
+
+/* 시안 B: 플로팅 채널명 픽 */
+.peek-left, .peek-right {
+  position:absolute; top:50%; transform:translateY(-50%);
+  font-size:11px; font-weight:600; letter-spacing:0.5px;
+  cursor:pointer; padding:6px 12px; border-radius:8px;
+  transition: all 0.3s;
+  animation: peekFloat 4s ease-in-out infinite;
+}
+.peek-left {
+  left:8px; color:#c48a6a; background:rgba(196,138,106,0.08);
+  border:1px solid rgba(196,138,106,0.15);
+}
+.peek-right {
+  right:8px; color:#6a8cb8; background:rgba(106,140,184,0.08);
+  border:1px solid rgba(106,140,184,0.15);
+}
+.peek-left:hover { background:rgba(196,138,106,0.15); }
+.peek-right:hover { background:rgba(106,140,184,0.15); }
+@keyframes peekFloat {
+  0%,100%{transform:translateY(-50%) translateX(0)}
+  50%{transform:translateY(-50%) translateX(var(--float-dir, 3px))}
+}
+.peek-left { --float-dir:-3px; }
+.peek-right { --float-dir:3px; }
+.peek-arrow { font-size:8px; opacity:0.5; }
+
+/* dot indicators */
+.dots { display:flex; justify-content:center; gap:6px; margin-top:8px; }
+.dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.2); }
+.dot.active { width:8px; height:8px; background:#d4a45c; box-shadow:0 0 6px rgba(212,164,92,0.4); }
+
+/* 구분선 */
+hr { border:none; border-top:1px solid rgba(255,255,255,0.06); margin:0 40px; }
+</style>
+</head>
+<body>
+
+<h2>시안 A — 디스크 가장자리 컬러 블리드</h2>
+<div class="scene">
+  <div class="bleed-left"></div>
+  <div class="bleed-right"></div>
+  <span class="bleed-label bleed-label-left">극동방송 ‹</span>
+  <span class="bleed-label bleed-label-right">› 말씀의전당</span>
+
+  <div class="arrow arrow-l">
+    <svg viewBox="0 0 14 14"><path d="M9 3 L5 7 L9 11" stroke="#d4a45c" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div style="text-align:center">
+    <div class="disc">
+      <div class="disc-center">
+        <div class="disc-icon">📻</div>
+        <div class="disc-freq">93.1 MHz</div>
+      </div>
+    </div>
+    <div class="ch-name">KBS 클래식FM</div>
+    <div class="ch-label">Classical Music</div>
+    <div class="dots">
+      <div class="dot active"></div>
+      <div class="dot" style="background:rgba(196,138,106,0.3)"></div>
+      <div class="dot" style="background:rgba(106,140,184,0.3)"></div>
+      <div class="dot" style="background:rgba(106,170,96,0.3)"></div>
+      <div class="dot" style="background:rgba(200,120,144,0.3)"></div>
+      <div class="dot" style="background:rgba(176,56,74,0.3)"></div>
+    </div>
+  </div>
+  <div class="arrow arrow-r">
+    <svg viewBox="0 0 14 14"><path d="M5 3 L9 7 L5 11" stroke="#d4a45c" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+</div>
+
+<hr>
+
+<h2>시안 B — 플로팅 채널명 픽</h2>
+<div class="scene">
+  <div class="peek-left"><span class="peek-arrow">‹ </span>극동방송</div>
+  <div class="peek-right">말씀의전당<span class="peek-arrow"> ›</span></div>
+
+  <div style="text-align:center">
+    <div class="disc">
+      <div class="disc-center">
+        <div class="disc-icon">📻</div>
+        <div class="disc-freq">93.1 MHz</div>
+      </div>
+    </div>
+    <div class="ch-name">KBS 클래식FM</div>
+    <div class="ch-label">Classical Music</div>
+    <div class="dots">
+      <div class="dot active"></div>
+      <div class="dot" style="background:rgba(196,138,106,0.3)"></div>
+      <div class="dot" style="background:rgba(106,140,184,0.3)"></div>
+      <div class="dot" style="background:rgba(106,170,96,0.3)"></div>
+      <div class="dot" style="background:rgba(200,120,144,0.3)"></div>
+      <div class="dot" style="background:rgba(176,56,74,0.3)"></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
