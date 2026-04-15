@@ -2087,21 +2087,26 @@ function checkAudioStall() {
   if (lastWatchdogTime >= 0 && curTime === lastWatchdogTime && !audioEl.paused && !audioEl.ended) {
     stallCount++;
     console.warn('[StallWatchdog] 스톨 감지 #' + stallCount + ' (currentTime=' + curTime + ')');
-    if (stallCount >= MAX_STALL_BEFORE_RELOAD) {
-      // 3회 연속 스톨 → 채널 전체 재진입
+    // 녹음 중에는 적극 복구를 스킵 (재시작/재로드가 녹음에 끊김을 유발)
+    // → 브라우저가 자체 버퍼로 복구하게 두고, 심각한 경우에만 개입
+    if (isRecording) {
+      // 녹음 중에는 훨씬 관대하게: 10회 이상 스톨이 지속될 때만 soft 복구
+      if (stallCount >= 10 && currentHls) {
+        currentHls.startLoad(); // startLoad는 play 재호출 없이 버퍼 채우기만
+      }
+    } else if (stallCount >= MAX_STALL_BEFORE_RELOAD) {
+      // 녹음 아닐 때만 채널 전체 재진입
       console.warn('[StallWatchdog] ' + MAX_STALL_BEFORE_RELOAD + '회 스톨 → 채널 재연결');
       showToast('연결 끊김 — 재연결 중...');
       stallCount = 0;
       lastWatchdogTime = -1;
       enterChannel(currentChannel);
     } else {
-      // 1~2회: 부드러운 복구 시도
+      // 1~2회: 부드러운 복구 시도 (녹음 아닐 때만)
       if (currentHls) {
-        // HLS: 로딩 재시작 + play() 강제 호출
         currentHls.startLoad();
         audioEl.play().catch(() => {});
       } else if (audioEl.src) {
-        // R2/Icecast: play() 재시도, 안 되면 현재 위치에서 재시작
         audioEl.play().catch(() => {
           if (currentTrackKey && channelTracks[currentChannel]) {
             playTrack(currentChannel, currentTrackIdx, curTime);
@@ -2110,7 +2115,6 @@ function checkAudioStall() {
       }
     }
   } else {
-    // 진행 중이면 카운터 리셋
     if (stallCount > 0) stallCount = 0;
   }
   lastWatchdogTime = curTime;
@@ -2326,7 +2330,7 @@ async function playHls(url, useProxy) {
   else { el.volume = currentVolume > 1.0 ? 1.0 : currentVolume; }
   const Hls = await loadHlsJs();
   if (Hls.isSupported()) {
-    const hlsConfig = { enableWorker:false, lowLatencyMode:true, backBufferLength:30, maxBufferLength:30 };
+    const hlsConfig = { enableWorker:false, lowLatencyMode:false, backBufferLength:60, maxBufferLength:60, maxMaxBufferLength:120 };
     if (useProxy) {
       const DefaultLoader = Hls.DefaultConfig.loader;
       const toProxy = u => WORKER_URL + '/api/hls-proxy?url=' + encodeURIComponent(u);
@@ -3214,11 +3218,12 @@ function bgKeepAliveHandler() {
       audioEl.play().catch(() => {});
     }
     // "재생 중"이지만 currentTime이 안 움직이는 경우 (silent stall) 복구
+    // 녹음 중에는 play() 재호출이 끊김을 유발하므로 startLoad만 사용
     const curTime = audioEl.currentTime;
     if (!audioEl.paused && !audioEl.ended && bgLastAudioTime >= 0 && curTime === bgLastAudioTime) {
-      console.warn('[bgKeepAlive] 백그라운드 스톨 감지, play() 재시도');
+      console.warn('[bgKeepAlive] 백그라운드 스톨 감지');
       if (currentHls) { currentHls.startLoad(); }
-      audioEl.play().catch(() => {});
+      if (!isRecording) { audioEl.play().catch(() => {}); }
     }
     bgLastAudioTime = curTime;
   }
@@ -3399,7 +3404,7 @@ function splitRecording() {
     mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType: recMime, audioBitsPerSecond: 192000});
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => { saveRecordedBlob(recordedChunks, String(recSegmentNum).padStart(3,'0')); };
-    mediaRecorder.start(1000);
+    mediaRecorder.start(5000); // 5초 청크 — 안정성 향상
   }, 50);
 }
 async function startRecording() {
@@ -3452,7 +3457,7 @@ async function doStartRecording() {
   mediaRecorder = new MediaRecorder(recDestination.stream, {mimeType: recMime, audioBitsPerSecond: 192000});
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = () => { const seg = recSegmentNum > 0 ? String(recSegmentNum).padStart(3,'0') : ''; saveRecordedBlob(recordedChunks, seg); };
-  mediaRecorder.start(1000);
+  mediaRecorder.start(5000); // 5초 청크 — 안정성 향상
   isRecording = true; updateRecordBtn(); startRecordTimer();
   if (recAutoSplit) startSilenceDetection();
   showToast(recAutoSplit ? '녹음 시작 (자동 분할)' : '녹음 시작 (계속 녹음)');
