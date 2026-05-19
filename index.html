@@ -590,9 +590,13 @@ body{
 .video-screen{background:#000;border-radius:10px;overflow:hidden;box-shadow:inset 0 0 24px rgba(0,0,0,0.6),0 4px 20px rgba(0,0,0,0.5);border:1px solid rgba(160,112,208,0.2)}
 #vPlayer{width:100%;display:block;background:#000;max-height:50vh}
 .video-now-title{margin-top:10px;font-size:14px;font-weight:600;color:#e8d8f0;text-align:center;line-height:1.4}
-.video-audio-toggle{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px auto 0;padding:9px 18px;border:1px solid rgba(160,112,208,0.4);border-radius:20px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;background:rgba(160,112,208,0.1);color:#d0a8e8;-webkit-tap-highlight-color:transparent;transition:all 0.2s}
+.video-controls{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.video-audio-toggle{display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 18px;border:1px solid rgba(160,112,208,0.4);border-radius:20px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;background:rgba(160,112,208,0.1);color:#d0a8e8;-webkit-tap-highlight-color:transparent;transition:all 0.2s}
 .video-audio-toggle:active{transform:scale(0.96)}
 .video-audio-toggle.active{background:rgba(160,112,208,0.25);border-color:#a070d0}
+.video-seek-btn{display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 12px;border:1px solid rgba(160,112,208,0.3);border-radius:14px;font:inherit;cursor:pointer;background:rgba(160,112,208,0.06);color:#c0a0e0;-webkit-tap-highlight-color:transparent;transition:all 0.15s;user-select:none}
+.video-seek-btn:active{transform:scale(0.92);background:rgba(160,112,208,0.2)}
+.video-seek-btn .lbl{font-size:9px;letter-spacing:0.5px;font-weight:600;opacity:0.7}
 .video-library{padding:14px 18px 24px}
 .video-section-label{font-size:10px;color:#605040;letter-spacing:2px;margin-bottom:10px;font-family:'Space Grotesk',monospace;text-transform:uppercase}
 .video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
@@ -794,10 +798,20 @@ body{
       <video id="vPlayer" playsinline controls preload="metadata"></video>
     </div>
     <div class="video-now-title" id="videoNowTitle"></div>
-    <button class="video-audio-toggle" id="videoAudioToggle" type="button">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle"><path d="M8 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm5 7a5 5 0 0 1-10 0H2a6 6 0 0 0 5 5.91V15h2v-1.09A6 6 0 0 0 14 8h-1z"/></svg>
-      <span class="lbl">화면 끄고 듣기</span>
-    </button>
+    <div class="video-controls">
+      <button class="video-seek-btn" id="vBack10" aria-label="10초 뒤로" title="10초 뒤로">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 8H7.5l2-2"/><path d="M7.5 8a5 5 0 1 1-5 5"/><text x="12" y="17" text-anchor="middle" font-size="7" stroke="none" fill="currentColor">10</text></svg>
+        <span class="lbl">10s</span>
+      </button>
+      <button class="video-audio-toggle" id="videoAudioToggle" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm5 7a5 5 0 0 1-10 0H2a6 6 0 0 0 5 5.91V15h2v-1.09A6 6 0 0 0 14 8h-1z"/></svg>
+        <span class="lbl">화면 끄고 듣기</span>
+      </button>
+      <button class="video-seek-btn" id="vFwd10" aria-label="10초 앞으로" title="10초 앞으로">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 8h5l-2-2"/><path d="M16.5 8a5 5 0 1 0 5 5"/><text x="12" y="17" text-anchor="middle" font-size="7" stroke="none" fill="currentColor">10</text></svg>
+        <span class="lbl">10s</span>
+      </button>
+    </div>
   </div>
   <div class="video-library">
     <div class="video-section-label" id="videoListLabel">영상 목록</div>
@@ -7317,7 +7331,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const back = $('videoBackBtn');
   if (back) back.addEventListener('click', () => {
     closeVideoSurface();
-    // 튜너 홈으로 복귀
     tunerOpen();
   });
   const toggle = $('videoAudioToggle');
@@ -7325,6 +7338,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (vEngineAudioActive) vExitAudioOnly();
     else vEnterAudioOnly();
   });
+  // ±10초 버튼
+  const b10 = $('vBack10'), f10 = $('vFwd10');
+  if (b10) b10.addEventListener('click', () => {
+    const v = $('vPlayer');
+    if (v) v.currentTime = Math.max(0, v.currentTime - 10);
+  });
+  if (f10) f10.addEventListener('click', () => {
+    const v = $('vPlayer');
+    if (v) v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10);
+  });
+  // 풀스크린 진입 시 영상 비율에 맞춰 orientation 자동 잠금 (Android Chrome)
+  const video = $('vPlayer');
+  if (video) {
+    document.addEventListener('fullscreenchange', tryLockOrientation);
+    document.addEventListener('webkitfullscreenchange', tryLockOrientation);
+    function tryLockOrientation() {
+      const fs = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fs && video.videoWidth && video.videoHeight) {
+        const isLandscape = video.videoWidth >= video.videoHeight;
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock(isLandscape ? 'landscape' : 'portrait').catch(() => {});
+        }
+      } else {
+        // 풀스크린 해제 시 orientation 잠금 해제
+        if (screen.orientation && screen.orientation.unlock) {
+          try { screen.orientation.unlock(); } catch {}
+        }
+      }
+    }
+  }
   // visibilitychange: 영상 채널에서 화면 꺼지면 audio-only로 자동 전환
   document.addEventListener('visibilitychange', () => {
     if (!videoSurfaceOpen || !vCurrentMeta) return;
