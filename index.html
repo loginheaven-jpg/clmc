@@ -6612,6 +6612,13 @@ function renderTunerChannels() {
     card.onclick = () => {
       // 선택채널 카드 클릭 → LP 화면으로 이동 + 재생
       appStartup = false;
+      // 사용자 제스처 unlock
+      try {
+        const ae = ensureAudioEl();
+        const p = ae.play();
+        if (p && p.catch) p.catch(() => {});
+        if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      } catch {}
       tunerClose();
       focusedIndex = tunerSelectedIdx;
       applyChannelTheme(sel.num);
@@ -6640,10 +6647,17 @@ function renderTunerChannels() {
       renderTunerChannels();
       renderTunerSlider();
       appStartup = false;
+      // 사용자 제스처 unlock (모바일 autoplay 차단 회피)
+      try {
+        const ae = ensureAudioEl();
+        const p = ae.play();
+        if (p && p.catch) p.catch(() => {});
+        if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      } catch {}
       focusedIndex = idx;
       applyChannelTheme(ch.num);
       enterChannel(ch.num);
-      tunerArmAutoNav(); // 1분 후 LP 자동 이동
+      tunerArmAutoNav();
     });
     wrap.appendChild(item);
   }
@@ -6834,8 +6848,20 @@ document.addEventListener('DOMContentLoaded', () => {
       // 튜너 홈에 머문 채로 재생 시작 (LP로 이동하지 않음)
       const ch = activeChannels[tunerSelectedIdx];
       if (ch) {
-        appStartup = false; // 명시적 재생 의도 → 자동 재생 차단 해제
+        appStartup = false;
         pb.classList.add('loading');
+        // ★ 사용자 제스처 unlock: enterChannel의 await 전에 audioEl을 활성화
+        // 모바일 autoplay policy 회피 — 이후 비동기 흐름에서도 play() 차단 안 됨
+        try {
+          const ae = ensureAudioEl();
+          ae.muted = false;
+          const p = ae.play();
+          if (p && p.catch) p.catch(() => {}); // 빈 src 실패 무시 — unlock만 목적
+          // AudioContext도 같이 깨우기
+          if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
+        } catch {}
         focusedIndex = tunerSelectedIdx;
         applyChannelTheme(ch.num);
         enterChannel(ch.num);
